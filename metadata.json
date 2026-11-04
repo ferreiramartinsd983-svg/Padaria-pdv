@@ -1,0 +1,6 @@
+{
+  "name": "Padaria Master 2.0 - ERP Android & PDV Profissional",
+  "description": "Sistema ERP e PDV profissional para padarias e confeitarias, com arquitetura Android nativa em Kotlin Jetpack Compose, Room Database offline-first e gestão completa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
