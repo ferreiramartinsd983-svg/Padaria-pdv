@@ -3,6 +3,7 @@ import {
   ChefHat, 
   Plus, 
   Trash2, 
+  Edit2,
   Percent, 
   DollarSign, 
   Clock, 
@@ -19,6 +20,8 @@ export const RecipesModule: React.FC = () => {
   const [recipes, setRecipes] = useState<Recipe[]>(() => storage.getRecipes());
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(recipes[0]?.id || null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
+  const [recipeToDelete, setRecipeToDelete] = useState<Recipe | null>(null);
 
   // Form para nova ficha técnica
   const [recipeName, setRecipeName] = useState('');
@@ -27,6 +30,7 @@ export const RecipesModule: React.FC = () => {
   const [yieldDesc, setYieldDesc] = useState('50 pães de 50g assados');
   const [targetMargin, setTargetMargin] = useState(65);
   const [overheadPercent, setOverheadPercent] = useState(15);
+  const [preparationTime, setPreparationTime] = useState(90);
   const [ingredients, setIngredients] = useState<Ingredient[]>([
     { name: 'Farinha de Trigo Especial', quantity: 2.5, unit: 'kg', unitCost: 4.20, totalCost: 10.50 },
     { name: 'Fermento Biológico Fresco', quantity: 0.05, unit: 'kg', unitCost: 18.00, totalCost: 0.90 }
@@ -60,19 +64,44 @@ export const RecipesModule: React.FC = () => {
     return { rawCost, totalBatch, unitCost, suggestedPrice };
   };
 
+  const resetRecipeForm = () => {
+    setRecipeName(''); setCategory('PAES'); setYieldUnits(50); setYieldDesc('50 pães de 50g assados');
+    setTargetMargin(65); setOverheadPercent(15); setPreparationTime(90);
+    setIngredients([
+      { name: 'Farinha de Trigo Especial', quantity: 2.5, unit: 'kg', unitCost: 4.20, totalCost: 10.50 },
+      { name: 'Fermento Biológico Fresco', quantity: 0.05, unit: 'kg', unitCost: 18.00, totalCost: 0.90 }
+    ]);
+  };
+  const openNewRecipe = () => { setEditingRecipe(null); resetRecipeForm(); setIsAddModalOpen(true); };
+  const openEditRecipe = (recipe: Recipe) => {
+    setEditingRecipe(recipe); setRecipeName(recipe.name); setCategory(recipe.category); setYieldUnits(recipe.yieldUnits);
+    setYieldDesc(recipe.yieldDescription); setTargetMargin(recipe.targetMarginPercent);
+    setOverheadPercent(recipe.overheadMarkupPercent); setPreparationTime(recipe.preparationTimeMinutes);
+    setIngredients(recipe.ingredients.map((ingredient) => ({ ...ingredient })));
+    setIsAddModalOpen(true);
+  };
+  const handleDeleteRecipe = () => {
+    if (!recipeToDelete) return;
+    const updated = recipes.filter((recipe) => recipe.id !== recipeToDelete.id);
+    setRecipes(updated); storage.saveRecipes(updated);
+    if (expandedRecipeId === recipeToDelete.id) setExpandedRecipeId(updated[0]?.id || null);
+    setRecipeToDelete(null);
+  };
+
   const handleSaveNewRecipe = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recipeName || ingredients.length === 0) return;
+    if (!recipeName.trim() || ingredients.length === 0 || yieldUnits <= 0) return;
+    if (ingredients.some((ingredient) => !ingredient.name.trim() || ingredient.quantity <= 0)) return;
 
     const { rawCost, totalBatch, unitCost, suggestedPrice } = calculateTotals();
 
     const newRecipe: Recipe = {
-      id: 'rec_' + Date.now(),
-      name: recipeName,
+      id: editingRecipe?.id || 'rec_' + Date.now(),
+      name: recipeName.trim(),
       category,
       yieldUnits,
       yieldDescription: yieldDesc,
-      preparationTimeMinutes: 90,
+      preparationTimeMinutes: preparationTime,
       ingredients,
       rawIngredientsCost: rawCost,
       overheadMarkupPercent: overheadPercent,
@@ -81,17 +110,16 @@ export const RecipesModule: React.FC = () => {
       targetMarginPercent: targetMargin,
       suggestedSalePrice: suggestedPrice,
       actualSalePrice: Math.ceil(suggestedPrice * 10) / 10,
-      instructions: [
+      instructions: editingRecipe?.instructions || [
         'Misturar os secos na masseira.',
         'Homogeneizar e cilindrar até obter ponto de véu.',
         'Assar na temperatura indicada.'
       ]
     };
 
-    const all = [newRecipe, ...recipes];
-    setRecipes(all);
-    storage.saveRecipes(all);
-    setIsAddModalOpen(false);
+    const all = editingRecipe ? recipes.map((recipe) => recipe.id === editingRecipe.id ? newRecipe : recipe) : [newRecipe, ...recipes];
+    setRecipes(all); storage.saveRecipes(all); setExpandedRecipeId(newRecipe.id);
+    setIsAddModalOpen(false); setEditingRecipe(null);
   };
 
   return (
@@ -111,7 +139,7 @@ export const RecipesModule: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={openNewRecipe}
           className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 active:scale-95 shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -175,7 +203,9 @@ export const RecipesModule: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="text-neutral-400">
+                  <div className="flex items-center gap-1 text-neutral-400">
+                    <button type="button" aria-label={"Editar ficha " + recipe.name} title="Editar ficha técnica" onClick={(event) => { event.stopPropagation(); openEditRecipe(recipe); }} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40"><Edit2 className="w-4 h-4" /></button>
+                    <button type="button" aria-label={"Excluir ficha " + recipe.name} title="Excluir ficha técnica" onClick={(event) => { event.stopPropagation(); setRecipeToDelete(recipe); }} className="p-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"><Trash2 className="w-4 h-4" /></button>
                     {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                   </div>
                 </div>
@@ -274,10 +304,10 @@ export const RecipesModule: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-lg text-neutral-900 dark:text-neutral-100 mb-1">
-              Criar Ficha Técnica de Padaria / Confeitaria
+              {editingRecipe ? 'Editar Ficha Técnica' : 'Criar Ficha Técnica de Padaria / Confeitaria'}
             </h3>
             <p className="text-xs text-neutral-400 mb-4">
-              Informe a receita com ingredientes e rendimento para cálculo automático de CMV
+              Informe a receita, ingredientes e rendimento para atualizar os cálculos de CMV
             </p>
 
             <form onSubmit={handleSaveNewRecipe} className="space-y-4 text-xs">
@@ -341,6 +371,11 @@ export const RecipesModule: React.FC = () => {
                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-mono"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><label className="font-semibold block mb-1">Tempo de preparo (minutos):</label><input type="number" min="1" value={preparationTime} onChange={(e) => setPreparationTime(Number(e.target.value))} className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-mono" /></div>
+                <div><label className="font-semibold block mb-1">Custos indiretos (%):</label><input type="number" min="0" max="500" value={overheadPercent} onChange={(e) => setOverheadPercent(Number(e.target.value))} className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-mono" /></div>
               </div>
 
               {/* Tabela Interativa de Ingredientes da Receita */}
@@ -415,7 +450,7 @@ export const RecipesModule: React.FC = () => {
               <div className="flex items-center gap-3 pt-4 border-t border-neutral-200 dark:border-neutral-800">
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
+                  onClick={() => { setIsAddModalOpen(false); setEditingRecipe(null); }}
                   className="flex-1 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 font-semibold"
                 >
                   Cancelar
@@ -424,13 +459,15 @@ export const RecipesModule: React.FC = () => {
                   type="submit"
                   className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold"
                 >
-                  Salvar Ficha Técnica
+                  {editingRecipe ? 'Salvar Alterações' : 'Salvar Ficha Técnica'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {recipeToDelete && <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"><div className="w-full max-w-sm rounded-2xl bg-white dark:bg-neutral-900 p-6 shadow-2xl"><h3 className="text-base font-bold">Excluir ficha técnica?</h3><p className="mt-2 text-sm text-neutral-500">A ficha “{recipeToDelete.name}” será removida permanentemente deste aparelho.</p><div className="mt-5 flex gap-3"><button onClick={() => setRecipeToDelete(null)} className="flex-1 rounded-xl border px-3 py-2 font-semibold">Manter ficha</button><button onClick={handleDeleteRecipe} className="flex-1 rounded-xl bg-red-600 px-3 py-2 font-bold text-white">Excluir</button></div></div></div>}
     </div>
   );
 };
