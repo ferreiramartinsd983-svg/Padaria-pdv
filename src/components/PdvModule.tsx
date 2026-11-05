@@ -14,9 +14,11 @@ import {
   Printer, 
   X,
   Sparkles,
-  History
+  History,
+  Lock,
+  Unlock
 } from 'lucide-react';
-import { Product, ProductCategory, CartItem, PaymentMethod, Sale } from '../types/padaria';
+import { Product, ProductCategory, CartItem, PaymentMethod, Sale, CashRegister } from '../types/padaria';
 import { storage } from '../services/storage';
 import { sound } from '../services/sound';
 import { SalesHistoryModal } from './SalesHistoryModal';
@@ -51,6 +53,25 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   // Receipt Modal
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
   const [showSalesHistory, setShowSalesHistory] = useState(false);
+  const [cashRegister, setCashRegister] = useState<CashRegister>(() => storage.getCashRegister());
+  const [cashModal, setCashModal] = useState<'open' | 'close' | null>(null);
+  const [openingAmount, setOpeningAmount] = useState(150);
+  const [cashOperator, setCashOperator] = useState('Operador Caixa 01');
+  const [countedCash, setCountedCash] = useState(cashRegister.expectedCashAmount);
+  const isCashOpen = cashRegister.status === 'OPEN';
+
+  const openCashRegister = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!cashOperator.trim() || openingAmount < 0) return;
+    const opened: CashRegister = { id: 'cx_' + Date.now(), status: 'OPEN', operatorName: cashOperator.trim(), openedAt: Date.now(), initialAmount: Number(openingAmount), movements: [], salesCount: 0, salesTotal: 0, salesByMethod: { DINHEIRO: 0, PIX: 0, CARTAO_DEBITO: 0, CARTAO_CREDITO: 0, FIADO: 0 }, expectedCashAmount: Number(openingAmount) };
+    storage.saveCashRegister(opened); setCashRegister(opened); setCashModal(null);
+  };
+
+  const closeCashRegister = (event: React.FormEvent) => {
+    event.preventDefault();
+    const closed: CashRegister = { ...cashRegister, status: 'CLOSED', closedAt: Date.now(), actualCashAmount: Number(countedCash), cashDifference: Number(countedCash) - cashRegister.expectedCashAmount };
+    storage.saveCashRegister(closed); setCashRegister(closed); setCashModal(null);
+  };
 
   const categories: { id: ProductCategory; label: string }[] = [
     { id: 'TODOS', label: 'Todos os Itens' },
@@ -169,6 +190,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
 
   // Abrir Modal de Pagamento
   const handleOpenCheckout = () => {
+    if (!isCashOpen) { setCashModal('open'); return; }
     if (cart.length === 0) return;
     setAmountPaid(Math.ceil(total));
     setIsCheckoutOpen(true);
@@ -187,6 +209,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
 
   // Finalizar Venda
   const handleFinalizeSale = () => {
+    if (!isCashOpen) { setIsCheckoutOpen(false); setCashModal('open'); return; }
     if (paymentMethod === 'DINHEIRO' && amountPaid < total) {
       sound.playAlert();
       return;
@@ -220,6 +243,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
       };
 
       storage.saveSale(newSale);
+      setCashRegister(storage.getCashRegister());
       sound.playSuccess();
 
       setIsProcessingPayment(false);
@@ -235,7 +259,12 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[calc(100vh-5rem)]">
+    <div className="space-y-4">
+      <section className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3"><div className={"w-10 h-10 rounded-xl flex items-center justify-center " + (isCashOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>{isCashOpen ? <Unlock className="w-5 h-5"/> : <Lock className="w-5 h-5"/>}</div><div><div className="font-bold text-sm">Caixa {isCashOpen ? 'aberto' : 'fechado'}</div><div className="text-xs text-neutral-500">{isCashOpen ? cashRegister.operatorName + ' · Gaveta esperada: R$ ' + cashRegister.expectedCashAmount.toFixed(2).replace('.', ',') : 'Abra o caixa para iniciar vendas'}</div></div></div>
+        {isCashOpen ? <button onClick={() => { setCountedCash(cashRegister.expectedCashAmount); setCashModal('close'); }} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-600 text-white text-xs font-bold"><Lock className="w-4 h-4"/>Fechar caixa</button> : <button onClick={() => setCashModal('open')} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"><Unlock className="w-4 h-4"/>Abrir caixa</button>}
+      </section>
+      <div className={"grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[calc(100vh-5rem)] " + (!isCashOpen ? 'opacity-75' : '')}>
       {/* Coluna da Esquerda: Catálogo Touch e Busca (8 colunas) */}
       <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-4">
         {/* Barra Superior de Busca & Scanner */}
@@ -492,16 +521,18 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
             onClick={handleOpenCheckout}
             disabled={cart.length === 0}
             className={`w-full py-3.5 px-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.99] ${
-              cart.length > 0
+              cart.length > 0 && isCashOpen
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
                 : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-400 cursor-not-allowed'
             }`}
           >
             <CheckCircle className="w-5 h-5" />
-            <span>COBRAR VENDA (F2)</span>
+            <span>{isCashOpen ? 'COBRAR VENDA (F2)' : 'ABRA O CAIXA PARA VENDER'}</span>
           </button>
         </div>
       </div>
+
+      {cashModal && <div className="fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-4"><form onSubmit={cashModal === 'open' ? openCashRegister : closeCashRegister} className="bg-white dark:bg-neutral-900 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4"><h2 className="text-lg font-bold">{cashModal === 'open' ? 'Abrir caixa' : 'Fechar caixa'}</h2>{cashModal === 'open' ? <><label className="block text-sm">Operador<input required value={cashOperator} onChange={e=>setCashOperator(e.target.value)} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label><label className="block text-sm">Fundo de troco inicial (R$)<input required type="number" min="0" step="0.01" value={openingAmount} onChange={e=>setOpeningAmount(Number(e.target.value))} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label></> : <><div className="rounded-lg bg-neutral-100 dark:bg-neutral-800 p-3 text-sm">Valor esperado na gaveta: <strong>R$ {cashRegister.expectedCashAmount.toFixed(2).replace('.', ',')}</strong></div><label className="block text-sm">Dinheiro contado (R$)<input required type="number" min="0" step="0.01" value={countedCash} onChange={e=>setCountedCash(Number(e.target.value))} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label></>}<div className="flex gap-2 justify-end"><button type="button" onClick={()=>setCashModal(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button><button type="submit" className={"rounded-lg px-4 py-2 text-sm font-bold text-white " + (cashModal === 'open' ? 'bg-emerald-600' : 'bg-red-600')}>{cashModal === 'open' ? 'Confirmar abertura' : 'Confirmar fechamento'}</button></div></form></div>}
 
       {/* Modal 1: Balança Eletrônica Touch para Produtos no Peso */}
       {scaleProduct && (
