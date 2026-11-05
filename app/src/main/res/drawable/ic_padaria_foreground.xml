@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.88" android:scaleY="0.88" android:pivotX="54" android:pivotY="54">
+    <!-- Padaria Master: pães dourados sobre balcão e toldo de loja. -->
+    <path android:fillColor="#FFF8E8" android:pathData="M27,57h54v29h-54z" />
+    <path android:fillColor="#D97706" android:pathData="M22,49l7,-17h50l7,17v6c0,5 -4,9 -9,9s-9,-4 -9,-9c0,5 -4,9 -9,9s-9,-4 -9,-9c0,5 -4,9 -9,9s-9,-4 -9,-9c0,5 -4,9 -9,9s-9,-4 -9,-9z" />
+    <path android:fillColor="#FBBF24" android:pathData="M29,34h10l-5,21c-1,4 -4,6 -8,6 -5,0 -8,-4 -8,-9z" />
+    <path android:fillColor="#FFF8E8" android:pathData="M39,34h10l-1,22c0,5 -4,8 -9,8 -4,0 -8,-3 -8,-7z" />
+    <path android:fillColor="#FBBF24" android:pathData="M49,34h10l2,22c0,5 -4,8 -9,8s-9,-3 -9,-8z" />
+    <path android:fillColor="#FFF8E8" android:pathData="M59,34h10l5,23c1,4 -3,7 -8,7 -5,0 -8,-3 -8,-8z" />
+    <path android:fillColor="#FBBF24" android:pathData="M69,34h10l9,18c2,5 -2,9 -7,9 -4,0 -7,-2 -8,-6z" />
+    <path android:fillColor="#92400E" android:pathData="M35,72h15v14h-15zM59,69h14v17h-14z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M43,75h2v8h-2zM65,72h2v10h-2z" />
+    <path android:fillColor="#F59E0B" android:pathData="M29,86h50v4h-50z" />
+    <path android:fillColor="#FFF8E8" android:pathData="M40,26c0,-5 4,-9 9,-9 3,0 5,1 7,4 2,-3 5,-5 9,-4 5,1 8,5 7,10h-32z" />
+    <path android:fillColor="#FDE68A" android:pathData="M47,24l3,-4 3,4zM60,23l3,-4 3,4z" />
+    </group>
+</vector>
