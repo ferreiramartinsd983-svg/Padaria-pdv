@@ -12,6 +12,7 @@ import { Product, Sale } from './types/padaria';
 import { storage } from './services/storage';
 
 export default function App() {
+  const isAndroidApp = new URLSearchParams(window.location.search).get('platform') === 'android';
   const [currentTab, setCurrentTab] = useState<string>('pdv');
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -64,6 +65,7 @@ export default function App() {
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
         isOnline={isOnline}
+        isAndroidApp={isAndroidApp}
       />
 
       <main className="flex-1 p-4 sm:p-6 max-w-7xl mx-auto w-full flex flex-col items-center">
@@ -85,7 +87,7 @@ export default function App() {
             {currentTab === 'cash' && <CashRegisterModule onCashUpdated={handleRefreshProducts} />}
             {currentTab === 'finance' && <FinanceModule />}
             {currentTab === 'sync' && <SyncModule onDatabaseRestored={handleRefreshProducts} />}
-            {currentTab === 'android' && <AndroidProjectExplorer />}
+            {!isAndroidApp && currentTab === 'android' && <AndroidProjectExplorer />}
           </div>
         )}
 
@@ -110,7 +112,7 @@ export default function App() {
             {currentTab === 'cash' && <CashRegisterModule onCashUpdated={handleRefreshProducts} />}
             {currentTab === 'finance' && <FinanceModule />}
             {currentTab === 'sync' && <SyncModule onDatabaseRestored={handleRefreshProducts} />}
-            {currentTab === 'android' && <AndroidProjectExplorer />}
+            {!isAndroidApp && currentTab === 'android' && <AndroidProjectExplorer />}
           </div>
         )}
 
@@ -134,7 +136,7 @@ export default function App() {
               {currentTab === 'cash' && <CashRegisterModule onCashUpdated={handleRefreshProducts} />}
               {currentTab === 'finance' && <FinanceModule />}
               {currentTab === 'sync' && <SyncModule onDatabaseRestored={handleRefreshProducts} />}
-              {currentTab === 'android' && <AndroidProjectExplorer />}
+              {!isAndroidApp && currentTab === 'android' && <AndroidProjectExplorer />}
             </div>
           </div>
         )}
@@ -142,7 +144,7 @@ export default function App() {
 
       {/* Footer simples e profissional */}
       <footer className="py-4 border-t border-neutral-200 dark:border-neutral-800 text-center text-xs text-neutral-400 bg-white/50 dark:bg-neutral-900/50">
-        <p>Padaria Master 2.0 · ERP & PDV Profissional Android Kotlin Jetpack Compose · Offline-First</p>
+        <p>Padaria Master 2.0 · Gestão da padaria neste dispositivo</p>
       </footer>
     </div>
   );

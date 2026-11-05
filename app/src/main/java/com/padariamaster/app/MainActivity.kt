@@ -1,39 +1,138 @@
 package com.padariamaster.app
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
+import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebChromeClient.FileChooserParams
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import com.padariamaster.app.presentation.navigation.AppNavHost
-import com.padariamaster.app.presentation.theme.PadariaMasterTheme
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.webkit.WebViewAssetLoader
 
 class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            val systemDark = isSystemInDarkTheme()
-            var isDarkTheme by remember { mutableStateOf(systemDark) }
+    private var webView: WebView? = null
+    private var pendingUploadCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingDownloadName: String = "PadariaMaster-backup.json"
+    private var pendingDownloadMime: String = "application/octet-stream"
+    private var pendingDownloadBytes: ByteArray? = null
 
-            PadariaMasterTheme(darkTheme = isDarkTheme) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    AppNavHost(
-                        isDarkTheme = isDarkTheme,
-                        onToggleTheme = { isDarkTheme = !isDarkTheme }
-                    )
-                }
+    private val openBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pendingUploadCallback?.onReceiveValue(uri?.let { arrayOf(it) })
+        pendingUploadCallback = null
+    }
+
+    private val saveDownload = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        val bytes = pendingDownloadBytes
+        if (result.resultCode == RESULT_OK && uri != null && bytes != null) {
+            runCatching {
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+            }.onSuccess {
+                Toast.makeText(this, "Arquivo salvo em Downloads", Toast.LENGTH_LONG).show()
+            }.onFailure {
+                Toast.makeText(this, "Não foi possível salvar o arquivo", Toast.LENGTH_LONG).show()
             }
         }
+        pendingDownloadBytes = null
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+
+        val appWebView = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = true
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    if (request.url.host == APP_ASSETS_HOST) return false
+                    return runCatching {
+                        startActivity(Intent(Intent.ACTION_VIEW, request.url))
+                        true
+                    }.getOrDefault(true)
+                }
+            }
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    pendingUploadCallback?.onReceiveValue(null)
+                    pendingUploadCallback = filePathCallback
+                    openBackup.launch(arrayOf("*/*"))
+                    return true
+                }
+            }
+            addJavascriptInterface(DownloadBridge(), "PadariaDownloads")
+        }
+
+        webView = appWebView
+        setContentView(appWebView)
+        appWebView.loadUrl("$APP_URL?platform=android")
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val currentWebView = webView
+                if (currentWebView?.canGoBack() == true) {
+                    currentWebView.goBack()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+    }
+
+    override fun onDestroy() {
+        webView?.apply {
+            removeJavascriptInterface("PadariaDownloads")
+            stopLoading()
+            destroy()
+        }
+        webView = null
+        super.onDestroy()
+    }
+
+    private inner class DownloadBridge {
+        @JavascriptInterface
+        fun saveBase64(fileName: String, mimeType: String, base64: String) {
+            val bytes = runCatching { Base64.decode(base64, Base64.DEFAULT) }.getOrNull() ?: return
+            runOnUiThread {
+                pendingDownloadName = fileName.substringAfterLast('/').substringAfterLast('\\').take(120)
+                pendingDownloadMime = mimeType.ifBlank { "application/octet-stream" }
+                pendingDownloadBytes = bytes
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = pendingDownloadMime
+                    putExtra(Intent.EXTRA_TITLE, pendingDownloadName)
+                }
+                saveDownload.launch(intent)
+            }
+        }
+    }
+
+    private companion object {
+        const val APP_ASSETS_HOST = "appassets.androidplatform.net"
+        const val APP_URL = "https://appassets.androidplatform.net/assets/www/index.html"
     }
 }

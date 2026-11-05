@@ -29,6 +29,20 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install web dependencies
+        run: set -o pipefail; bun install --frozen-lockfile 2>&1 | tee web-build.log
+
+      - name: Build web interface
+        run: set -o pipefail; bun run build 2>&1 | tee -a web-build.log
+
+      - name: Package web interface in Android app
+        run: |
+          mkdir -p app/src/main/assets/www
+          cp -R dist/. app/src/main/assets/www/
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
@@ -37,11 +51,11 @@ jobs:
       - name: Build debug APK
         run: set -o pipefail; gradle --no-daemon :app:assembleDebug --stacktrace 2>&1 | tee build.log
 
-      - name: Report Gradle failure details
+      - name: Report build failure details
         if: failure()
         run: |
-          detail=$(tail -n 80 build.log | tr '\n' ' ' | cut -c1-6000)
-          echo "::error title=Gradle build output::$detail"
+          detail=$(for file in web-build.log build.log; do [ ! -f "$file" ] || cat "$file"; done | tail -n 80 | tr '\n' ' ' | cut -c1-6000)
+          echo "::error title=Build output::$detail"
 
       - name: Upload APK and build log
         if: always()
@@ -50,6 +64,7 @@ jobs:
           name: padaria-master-debug-apk
           path: |
             app/build/outputs/apk/debug/app-debug.apk
+            web-build.log
             build.log
           if-no-files-found: warn
 

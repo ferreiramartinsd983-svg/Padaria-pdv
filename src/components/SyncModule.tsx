@@ -1,3 +1,4 @@
+import { downloadBlob } from '../services/download';
 import React, { useState } from 'react';
 import { 
   Cloud, 
@@ -61,18 +62,11 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
   };
 
   // Exportar Backup Completo
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
     const jsonStr = storage.exportFullBackup();
     const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `PadariaMaster2_Backup_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setBackupMessage('Backup baixado com sucesso!');
+    await downloadBlob(blob, 'PadariaMaster2_Backup.json');
+    setBackupMessage('Selecione onde salvar o backup.');
     setTimeout(() => setBackupMessage(null), 3500);
   };
 
@@ -111,11 +105,11 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
               </h2>
               <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Room Database Ativo</span>
+                <span>Armazenamento local ativo</span>
               </span>
             </div>
             <p className="text-xs text-neutral-400 mt-1 max-w-xl leading-relaxed">
-              O funcionamento essencial da padaria não depende da internet. Todas as operações de PDV, pesagem, fechamento de caixa e fichas técnicas são salvas instantaneamente no banco de dados local SQLite/Room.
+              Os dados de PDV, estoque, vendas, receitas e caixa são guardados neste aparelho. As operações locais continuam disponíveis sem conexão.
             </p>
           </div>
         </div>
@@ -124,15 +118,15 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
         <div className="flex items-center gap-3 bg-neutral-50 dark:bg-neutral-800/60 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700">
           <div className="text-right">
             <span className="text-xs font-bold block text-neutral-900 dark:text-neutral-100">
-              Cloud Firestore (Nuvem)
+              Sincronização com a nuvem
             </span>
             <span className="text-[11px] text-neutral-400">
-              {syncState.firestoreEnabled ? 'Sincronização em tempo real' : 'Modo local puro (100% offline)'}
+              Firebase não configurado nesta instalação
             </span>
           </div>
 
           <button
-            onClick={handleToggleFirestore}
+            disabled aria-label="Sincronização em nuvem não configurada"
             className={`w-12 h-6 rounded-full transition-colors relative p-0.5 ${
               syncState.firestoreEnabled ? 'bg-amber-500' : 'bg-neutral-300 dark:bg-neutral-600'
             }`}
@@ -154,21 +148,21 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
                 <HardDrive className="w-5 h-5 text-amber-500" />
-                <span>Banco SQLite Room Local</span>
+                <span>Dados locais deste aparelho</span>
               </h3>
               <span className="text-xs font-mono tabular-nums text-neutral-500">
-                v2.0.0 (SQLite 3)
+                v2.0.0 (armazenamento local)
               </span>
             </div>
 
             <p className="text-xs text-neutral-400 leading-relaxed mb-4">
-              Seu dispositivo armazena tabelas estruturadas de produtos, receitas, histórico de vendas e movimentações de caixa com integridade relacional ACID.
+              Os dados ficam no armazenamento local do app. Exporte um backup para levar seus registros a outro aparelho.
             </p>
 
             <div className="space-y-2 text-xs font-mono">
               <div className="flex justify-between py-2 border-b border-neutral-100 dark:border-neutral-800">
                 <span className="text-neutral-500 font-sans">Status de Escrita Local:</span>
-                <span className="font-bold text-emerald-600">GRAVAÇÃO IMEDIATA</span>
+                <span className="font-bold text-emerald-600">SALVO NESTE DISPOSITIVO</span>
               </div>
               <div className="flex justify-between py-2 border-b border-neutral-100 dark:border-neutral-800">
                 <span className="text-neutral-500 font-sans">Alterações na Fila Offline:</span>
@@ -188,12 +182,11 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
           </div>
 
           <button
-            onClick={handleManualSyncNow}
-            disabled={isSyncing}
+            disabled
             className="w-full py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-amber-500' : ''}`} />
-            <span>{isSyncing ? 'Processando Fila...' : 'Forçar Sincronização Agora'}</span>
+            <span>Sincronização em nuvem indisponível</span>
           </button>
         </div>
 

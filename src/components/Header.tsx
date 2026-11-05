@@ -22,6 +22,7 @@ interface HeaderProps {
   viewMode: ViewMode;
   onChangeViewMode: (mode: ViewMode) => void;
   isOnline: boolean;
+  isAndroidApp: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,7 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme,
   viewMode,
   onChangeViewMode,
-  isOnline
+  isOnline,
+  isAndroidApp
 }) => {
   const [isDownloading, setIsDownloading] = React.useState(false);
 
@@ -53,7 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'finance', label: 'DRE Financeiro' },
     { id: 'sync', label: 'Offline / Sync' },
     { id: 'android', label: 'Código Android' },
-  ];
+  ].filter((link) => !isAndroidApp || link.id !== 'android');
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 transition-colors">
@@ -97,7 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-2 shrink-0">
           {/* Status Offline/Online */}
           <div 
-            title={isOnline ? "Conexão ativa (Sincronizado)" : "Modo Offline (Gravando no SQLite Room local)"}
+            title={isOnline ? "Conexão de rede disponível" : "Modo offline (dados guardados neste aparelho)"}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${
               isOnline 
                 ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
@@ -109,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* View Mode Switcher (para testar na proporção Tablet Touch ou Smartphone) */}
-          <div className="hidden sm:flex items-center p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700">
+          <div className={isAndroidApp ? 'hidden' : 'hidden sm:flex items-center p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700'}>
             <button
               onClick={() => onChangeViewMode('desktop')}
               title="Visão Desktop ERP"
@@ -149,7 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {/* Download Android Studio Project ZIP */}
-          <button
+          {!isAndroidApp && <button
             onClick={handleDownloadZip}
             disabled={isDownloading}
             className="flex items-center gap-1.5 px-3 py-2 bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:hover:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 whitespace-nowrap"
@@ -157,7 +159,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Download className="w-3.5 h-3.5" />
             <span className="hidden md:inline">{isDownloading ? 'Gerando ZIP...' : 'Baixar Android Studio (.ZIP)'}</span>
             <span className="md:hidden">ZIP</span>
-          </button>
+          </button>}
         </div>
       </div>
 

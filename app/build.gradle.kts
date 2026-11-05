@@ -63,6 +63,7 @@ ksp {
 }
 
 dependencies {
+    implementation("androidx.webkit:webkit:1.18.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

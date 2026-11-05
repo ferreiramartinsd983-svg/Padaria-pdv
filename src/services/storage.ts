@@ -1,3 +1,7 @@
+import paoFrancesImage from '../assets/images/bakery_pao_frances_1793807977222.jpg';
+import paoQueijoImage from '../assets/images/bakery_pao_de_queijo_1793807977568.jpg';
+import boloImage from '../assets/images/bakery_bolo_artesanal_1793807978147.jpg';
+import cafeImage from '../assets/images/bakery_cafe_espresso_1793807978740.jpg';
 import { 
   Product, 
   Sale, 
@@ -32,7 +36,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     unit: 'KG',
     batchNumber: 'LT-2401',
     expirationDate: '2026-11-05',
-    imageUrl: '/src/assets/images/bakery_pao_frances_1793807977222.jpg',
+    imageUrl: paoFrancesImage,
     updatedAt: Date.now(),
   },
   {
@@ -48,7 +52,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     unit: 'UN',
     batchNumber: 'LT-2402',
     expirationDate: '2026-11-06',
-    imageUrl: '/src/assets/images/bakery_pao_de_queijo_1793807977568.jpg',
+    imageUrl: paoQueijoImage,
     updatedAt: Date.now(),
   },
   {
@@ -64,7 +68,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     unit: 'UN',
     batchNumber: 'LT-2403',
     expirationDate: '2026-11-07',
-    imageUrl: '/src/assets/images/bakery_bolo_artesanal_1793807978147.jpg',
+    imageUrl: boloImage,
     updatedAt: Date.now(),
   },
   {
@@ -78,7 +82,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stockQuantity: 240,
     minStock: 40,
     unit: 'UN',
-    imageUrl: '/src/assets/images/bakery_cafe_espresso_1793807978740.jpg',
+    imageUrl: cafeImage,
     updatedAt: Date.now(),
   },
   {

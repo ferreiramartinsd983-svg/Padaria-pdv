@@ -1,3 +1,4 @@
+import { downloadBlob } from './download';
 import JSZip from 'jszip';
 
 export interface AndroidFileDefinition {
@@ -615,13 +616,5 @@ Este é o código-fonte nativo completo do **PADARIA MASTER 2.0**, desenvolvido 
 
   // Gera o blob do ZIP
   const content = await zip.generateAsync({ type: 'blob' });
-  const url = URL.createObjectURL(content);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'PadariaMaster_Android_Project.zip';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await downloadBlob(content, 'PadariaMaster_Android_Project.zip');
 }
