@@ -35,7 +35,7 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug --stacktrace 2>&1 | tee build.log
+        run: set -o pipefail; gradle --no-daemon :app:assembleDebug --stacktrace 2>&1 | tee build.log
 
       - name: Upload APK and build log
         if: always()
