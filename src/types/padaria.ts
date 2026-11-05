@@ -29,6 +29,7 @@ export interface Product {
   expirationDate?: string; // YYYY-MM-DD
   imageUrl?: string;
   updatedAt: number;
+  isArchived?: boolean;
 }
 
 export interface CartItem {
@@ -61,6 +62,10 @@ export interface Sale {
   customerName?: string;
   cashRegisterId: string;
   isSynced: boolean;
+  status?: 'CONCLUIDA' | 'CANCELADA';
+  cancelledAt?: number;
+  cancellationReason?: string;
+  cancelledBy?: string;
 }
 
 export interface Ingredient {

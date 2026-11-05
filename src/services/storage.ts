@@ -20,6 +20,7 @@ const STORAGE_KEYS = {
   FINANCES: 'padaria_master_finances_v2',
   ORDERS: 'padaria_master_orders_v2',
   SYNC: 'padaria_master_sync_v2',
+  MANAGER_PIN: 'padaria_master_manager_pin_v1',
 };
 
 export const INITIAL_PRODUCTS: Product[] = [
@@ -437,9 +438,92 @@ class StorageService {
     }
   }
 
+  hasManagerPin(): boolean {
+    return Boolean(localStorage.getItem(STORAGE_KEYS.MANAGER_PIN));
+  }
+
+  private async hashPin(pin: string): Promise<string> {
+    const bytes = new TextEncoder().encode(pin);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  async verifyManagerPin(pin: string): Promise<boolean> {
+    const savedHash = localStorage.getItem(STORAGE_KEYS.MANAGER_PIN);
+    if (!savedHash) return false;
+    return (await this.hashPin(pin)) === savedHash;
+  }
+
+  async setManagerPin(newPin: string, currentPin?: string): Promise<boolean> {
+    if (!/^\d{4,8}$/.test(newPin)) return false;
+    if (this.hasManagerPin() && !(await this.verifyManagerPin(currentPin ?? ''))) return false;
+    localStorage.setItem(STORAGE_KEYS.MANAGER_PIN, await this.hashPin(newPin));
+    return true;
+  }
+
+  async cancelSale(
+    saleId: string,
+    managerPin: string,
+    reason: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!(await this.verifyManagerPin(managerPin))) {
+      return { ok: false, error: 'PIN do gerente incorreto ou não cadastrado.' };
+    }
+    if (reason.trim().length < 4) {
+      return { ok: false, error: 'Informe o motivo do cancelamento.' };
+    }
+
+    const sales = this.getSales();
+    const saleIndex = sales.findIndex((sale) => sale.id === saleId);
+    if (saleIndex < 0) return { ok: false, error: 'Venda não encontrada.' };
+    const sale = sales[saleIndex];
+    if (sale.status === 'CANCELADA') return { ok: false, error: 'Esta venda já foi cancelada.' };
+
+    const cancelledSale: Sale = {
+      ...sale,
+      status: 'CANCELADA',
+      cancelledAt: Date.now(),
+      cancellationReason: reason.trim(),
+      cancelledBy: 'Gerente autorizado'
+    };
+    sales[saleIndex] = cancelledSale;
+    localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(sales));
+
+    const restoredProducts = this.getProducts().map((product) => {
+      const returnedQuantity = sale.items
+        .filter((item) => item.productId === product.id)
+        .reduce((total, item) => total + item.quantity, 0);
+      if (returnedQuantity === 0) return product;
+      return {
+        ...product,
+        stockQuantity: product.stockQuantity + returnedQuantity,
+        updatedAt: Date.now()
+      };
+    });
+    this.saveProducts(restoredProducts);
+
+    const cash = this.getCashRegister();
+    if (cash?.id === sale.cashRegisterId) {
+      cash.salesCount = Math.max(0, cash.salesCount - 1);
+      cash.salesTotal = Math.max(0, cash.salesTotal - sale.total);
+      cash.salesByMethod[sale.paymentMethod] = Math.max(
+        0,
+        (cash.salesByMethod[sale.paymentMethod] || 0) - sale.total
+      );
+      if (sale.paymentMethod === 'DINHEIRO') {
+        cash.expectedCashAmount = Math.max(0, cash.expectedCashAmount - sale.total);
+      }
+      this.saveCashRegister(cash);
+    }
+
+    this.saveFinances(this.getFinances().filter((transaction) => transaction.id !== 'tx_' + sale.id));
+    this.addSyncLog('CANCEL', 'SALE_' + sale.code);
+    return { ok: true };
+  }
+
   saveSale(sale: Sale): void {
     const sales = this.getSales();
-    sales.unshift(sale);
+    sales.unshift({ status: 'CONCLUIDA', ...sale });
     localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(sales));
 
     // Abate de estoque

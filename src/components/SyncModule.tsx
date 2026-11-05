@@ -12,7 +12,8 @@ import {
   Wifi, 
   WifiOff, 
   CheckCircle, 
-  AlertTriangle 
+  AlertTriangle,
+  KeyRound
 } from 'lucide-react';
 import { SyncState } from '../types/padaria';
 import { storage } from '../services/storage';
@@ -25,6 +26,11 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
   const [syncState, setSyncState] = useState<SyncState>(() => storage.getSyncState());
   const [isSyncing, setIsSyncing] = useState(false);
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [pinOpen, setPinOpen] = useState(false);
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinMessage, setPinMessage] = useState('');
 
   const handleToggleFirestore = () => {
     const updated: SyncState = {
@@ -90,6 +96,13 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
     reader.readAsText(file);
   };
 
+  const saveManagerPin = async () => {
+    if (newPin !== confirmPin) { setPinMessage('Os PINs não coincidem.'); return; }
+    const ok = await storage.setManagerPin(newPin, currentPin || undefined);
+    setPinMessage(ok ? 'PIN do gerente salvo.' : (storage.hasManagerPin() ? 'PIN atual incorreto ou novo PIN inválido.' : 'Use de 4 a 8 números.'));
+    if (ok) { setPinOpen(false); setCurrentPin(''); setNewPin(''); setConfirmPin(''); }
+  };
+
   return (
     <div className="space-y-6">
       {/* Banner Principal de Arquitetura Offline-First */}
@@ -140,6 +153,8 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
         </div>
       </div>
 
+      <section className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4"><div><h3 className="font-bold flex items-center gap-2"><KeyRound className="w-5 h-5 text-amber-500"/>PIN do gerente</h3><p className="text-xs text-neutral-500 mt-1">{storage.hasManagerPin() ? 'PIN configurado' : 'Cadastre um PIN para autorizar cancelamento de vendas'}</p>{pinMessage && <p className="text-xs mt-2 text-amber-700">{pinMessage}</p>}</div><button onClick={()=>{setPinMessage('');setPinOpen(true);}} className="px-4 py-2 rounded-lg bg-amber-500 text-white text-xs font-bold">{storage.hasManagerPin() ? 'Alterar PIN' : 'Configurar PIN'}</button></section>
+      {pinOpen && <div className="fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-4"><div className="bg-white dark:bg-neutral-900 p-5 rounded-2xl w-full max-w-sm space-y-3"><h3 className="font-bold">{storage.hasManagerPin() ? 'Alterar PIN do gerente' : 'Configurar PIN do gerente'}</h3>{storage.hasManagerPin() && <input type="password" inputMode="numeric" value={currentPin} onChange={e=>setCurrentPin(e.target.value)} placeholder="PIN atual" className="w-full p-2 rounded border dark:bg-neutral-800"/>}<input type="password" inputMode="numeric" value={newPin} onChange={e=>setNewPin(e.target.value)} placeholder="Novo PIN (4 a 8 números)" className="w-full p-2 rounded border dark:bg-neutral-800"/><input type="password" inputMode="numeric" value={confirmPin} onChange={e=>setConfirmPin(e.target.value)} placeholder="Confirme o novo PIN" className="w-full p-2 rounded border dark:bg-neutral-800"/>{pinMessage && <p className="text-sm text-red-600">{pinMessage}</p>}<div className="flex justify-end gap-2"><button onClick={()=>setPinOpen(false)} className="px-3 py-2 rounded border">Cancelar</button><button onClick={saveManagerPin} className="px-3 py-2 rounded bg-amber-500 text-white font-bold">Salvar PIN</button></div></div></div>}
       {/* Grid de Status e Ações */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Painel do Banco Local Room */}

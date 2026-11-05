@@ -9,7 +9,9 @@ import {
   Clock, 
   CheckCircle, 
   X,
-  Edit2
+  Edit2,
+  Trash2,
+  RotateCcw
 } from 'lucide-react';
 import { Product, ProductCategory } from '../types/padaria';
 import { storage } from '../services/storage';
@@ -26,6 +28,9 @@ export const StockModule: React.FC<StockModuleProps> = ({
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('TODOS');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [productToArchive, setProductToArchive] = useState<Product | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [adjustType, setAdjustType] = useState<'ENTRADA' | 'PERDA'>('ENTRADA');
@@ -48,40 +53,76 @@ export const StockModule: React.FC<StockModuleProps> = ({
   });
 
   const filteredProducts = products.filter((p) => {
+    const matchesArchive = Boolean(p.isArchived) === showArchived;
     const matchCategory = filterCategory === 'TODOS' || p.category === filterCategory;
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search);
-    return matchCategory && matchSearch;
+    return matchesArchive && matchCategory && matchSearch;
   });
+  const archivedCount = products.filter((product) => product.isArchived).length;
 
   // Estatísticas
-  const lowStockCount = products.filter((p) => p.stockQuantity <= p.minStock).length;
-  const totalItemsCount = products.reduce((acc, p) => acc + p.stockQuantity, 0);
-  const totalStockValue = products.reduce((acc, p) => acc + (p.stockQuantity * p.costPrice), 0);
+  const activeProducts = products.filter((product) => !product.isArchived);
+  const lowStockCount = activeProducts.filter((p) => p.stockQuantity <= p.minStock).length;
+  const totalItemsCount = activeProducts.reduce((acc, p) => acc + p.stockQuantity, 0);
+  const totalStockValue = activeProducts.reduce((acc, p) => acc + (p.stockQuantity * p.costPrice), 0);
 
-  const handleCreateProduct = (e: React.FormEvent) => {
+  const resetProductForm = () => {
+    setFormData({
+      name: '', category: 'PAES', barcode: '', salePrice: 15.00, costPrice: 5.50,
+      isWeighed: false, stockQuantity: 20, minStock: 5, unit: 'UN',
+      batchNumber: 'LT-' + Math.floor(1000 + Math.random() * 9000),
+      expirationDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]
+    });
+  };
+
+  const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name) return;
+    if (!formData.name.trim()) return;
+
+    if (editingProduct) {
+      const updated = products.map((product) => product.id === editingProduct.id
+        ? { ...product, ...formData, name: formData.name.trim(), updatedAt: Date.now() }
+        : product
+      );
+      storage.saveProducts(updated);
+      onProductsUpdated();
+      setEditingProduct(null);
+      setIsAddModalOpen(false);
+      return;
+    }
 
     const newProd: Product = {
       id: 'prod_' + Date.now(),
-      name: formData.name,
-      category: formData.category,
+      ...formData,
+      name: formData.name.trim(),
       barcode: formData.barcode || String(Math.floor(78910000000 + Math.random() * 9999999)),
       salePrice: Number(formData.salePrice),
       costPrice: Number(formData.costPrice),
-      isWeighed: formData.isWeighed,
       stockQuantity: Number(formData.stockQuantity),
       minStock: Number(formData.minStock),
-      unit: formData.unit,
-      batchNumber: formData.batchNumber,
-      expirationDate: formData.expirationDate,
       updatedAt: Date.now()
     };
-
-    const all = [newProd, ...products];
-    storage.saveProducts(all);
+    storage.saveProducts([newProd, ...products]);
     onProductsUpdated();
     setIsAddModalOpen(false);
+  };
+
+  const handleArchiveProduct = () => {
+    if (!productToArchive) return;
+    storage.saveProducts(products.map((product) => product.id === productToArchive.id
+      ? { ...product, isArchived: true, updatedAt: Date.now() }
+      : product
+    ));
+    onProductsUpdated();
+    setProductToArchive(null);
+  };
+
+  const handleRestoreProduct = (product: Product) => {
+    storage.saveProducts(products.map((item) => item.id === product.id
+      ? { ...item, isArchived: false, updatedAt: Date.now() }
+      : item
+    ));
+    onProductsUpdated();
   };
 
   const handleConfirmAdjust = () => {
@@ -113,7 +154,7 @@ export const StockModule: React.FC<StockModuleProps> = ({
           <div>
             <span className="text-xs text-neutral-500 font-medium">Produtos Cadastrados</span>
             <p className="text-2xl font-bold font-mono tabular-nums text-neutral-900 dark:text-neutral-50 mt-1">
-              {products.length} itens
+              {activeProducts.length} itens
             </p>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
@@ -174,13 +215,19 @@ export const StockModule: React.FC<StockModuleProps> = ({
           </select>
         </div>
 
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Cadastrar Novo Produto</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {archivedCount > 0 && (
+            <button onClick={() => setShowArchived(!showArchived)} className="px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-semibold">
+              {showArchived ? 'Voltar ao estoque' : `Removidos (${archivedCount})`}
+            </button>
+          )}
+          {!showArchived && (
+            <button onClick={() => { setEditingProduct(null); resetProductForm(); setIsAddModalOpen(true); }} className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition-all shadow-xs">
+              <Plus className="w-4 h-4" />
+              <span>Cadastrar Novo Produto</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabela de Produtos & Lotes */}
@@ -196,7 +243,7 @@ export const StockModule: React.FC<StockModuleProps> = ({
                 <th className="py-3 px-4 text-right">Custo Unit</th>
                 <th className="py-3 px-4 text-right">Preço Venda</th>
                 <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Ajustar</th>
+                <th className="py-3 px-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-mono tabular-nums">
@@ -234,43 +281,29 @@ export const StockModule: React.FC<StockModuleProps> = ({
                       R$ {p.salePrice.toFixed(2).replace('.', ',')}
                     </td>
                     <td className="py-3 px-4 text-center font-sans">
-                      {isCritical ? (
+                      {p.isArchived ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-500">Removido</span>
+                      ) : isCritical ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 px-2 py-0.5 rounded-full">
-                          <AlertTriangle className="w-3 h-3" />
-                          <span>Crítico ({p.minStock})</span>
+                          <AlertTriangle className="w-3 h-3" /><span>Crítico ({p.minStock})</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                          <CheckCircle className="w-3 h-3" />
-                          <span>Normal</span>
+                          <CheckCircle className="w-3 h-3" /><span>Normal</span>
                         </span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-right font-sans">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => {
-                            setSelectedProduct(p);
-                            setAdjustType('ENTRADA');
-                            setIsAdjustModalOpen(true);
-                          }}
-                          title="Dar entrada de mercadoria/fornada"
-                          className="p-1.5 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-600 transition-colors"
-                        >
-                          <ArrowUpRight className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedProduct(p);
-                            setAdjustType('PERDA');
-                            setIsAdjustModalOpen(true);
-                          }}
-                          title="Registrar perda de fornada / quebra"
-                          className="p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 text-red-500 transition-colors"
-                        >
-                          <ArrowDownRight className="w-4 h-4" />
-                        </button>
-                      </div>
+                      {p.isArchived ? (
+                        <button onClick={() => handleRestoreProduct(p)} title="Restaurar produto no estoque" className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-emerald-700 hover:bg-emerald-50"><RotateCcw className="w-4 h-4" />Restaurar</button>
+                      ) : (
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => { setSelectedProduct(p); setAdjustType('ENTRADA'); setIsAdjustModalOpen(true); }} title="Dar entrada de mercadoria/fornada" className="p-1.5 rounded-md hover:bg-emerald-50 text-emerald-600"><ArrowUpRight className="w-4 h-4" /></button>
+                          <button onClick={() => { setSelectedProduct(p); setAdjustType('PERDA'); setIsAdjustModalOpen(true); }} title="Registrar perda de fornada / quebra" className="p-1.5 rounded-md hover:bg-red-50 text-red-500"><ArrowDownRight className="w-4 h-4" /></button>
+                          <button onClick={() => { setEditingProduct(p); setFormData({ name: p.name, category: p.category, barcode: p.barcode, salePrice: p.salePrice, costPrice: p.costPrice, isWeighed: p.isWeighed, stockQuantity: p.stockQuantity, minStock: p.minStock, unit: p.unit, batchNumber: p.batchNumber || '', expirationDate: p.expirationDate || '' }); setIsAddModalOpen(true); }} title="Editar produto" className="p-1.5 rounded-md hover:bg-blue-50 text-blue-600"><Edit2 className="w-4 h-4" /></button>
+                          <button onClick={() => setProductToArchive(p)} title="Remover do estoque" className="p-1.5 rounded-md hover:bg-red-50 text-red-600"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -286,14 +319,14 @@ export const StockModule: React.FC<StockModuleProps> = ({
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-200 dark:border-neutral-800">
               <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100">
-                Cadastrar Novo Produto
+                {editingProduct ? 'Editar Produto' : 'Cadastrar Novo Produto'}
               </h3>
               <button onClick={() => setIsAddModalOpen(false)} className="text-neutral-400 hover:text-neutral-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateProduct} className="space-y-3 mt-4 text-xs">
+            <form onSubmit={handleSaveProduct} className="space-y-3 mt-4 text-xs">
               <div>
                 <label className="font-semibold text-neutral-700 dark:text-neutral-300 block mb-1">
                   Nome do Produto:
@@ -408,6 +441,17 @@ export const StockModule: React.FC<StockModuleProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-neutral-700 dark:text-neutral-300 block mb-1">Lote:</label>
+                  <input type="text" value={formData.batchNumber} onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })} className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs" />
+                </div>
+                <div>
+                  <label className="font-semibold text-neutral-700 dark:text-neutral-300 block mb-1">Validade:</label>
+                  <input type="date" value={formData.expirationDate} onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })} className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs" />
+                </div>
+              </div>
+
               <div className="flex items-center gap-3 pt-3">
                 <button
                   type="button"
@@ -424,6 +468,19 @@ export const StockModule: React.FC<StockModuleProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {productToArchive && (
+        <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-neutral-900 p-6 shadow-2xl">
+            <h3 className="text-base font-bold">Remover produto do estoque?</h3>
+            <p className="mt-2 text-sm text-neutral-500">{productToArchive.name} sairá do PDV e da lista ativa. O histórico de vendas será preservado e o produto poderá ser restaurado.</p>
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => setProductToArchive(null)} className="flex-1 rounded-xl border px-3 py-2 font-semibold">Manter</button>
+              <button onClick={handleArchiveProduct} className="flex-1 rounded-xl bg-red-600 px-3 py-2 font-bold text-white">Remover</button>
+            </div>
           </div>
         </div>
       )}

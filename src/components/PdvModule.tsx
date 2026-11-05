@@ -13,11 +13,13 @@ import {
   UserCheck, 
   Printer, 
   X,
-  Sparkles
+  Sparkles,
+  History
 } from 'lucide-react';
 import { Product, ProductCategory, CartItem, PaymentMethod, Sale } from '../types/padaria';
 import { storage } from '../services/storage';
 import { sound } from '../services/sound';
+import { SalesHistoryModal } from './SalesHistoryModal';
 
 interface PdvModuleProps {
   products: Product[];
@@ -48,6 +50,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
 
   // Receipt Modal
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+  const [showSalesHistory, setShowSalesHistory] = useState(false);
 
   const categories: { id: ProductCategory; label: string }[] = [
     { id: 'TODOS', label: 'Todos os Itens' },
@@ -62,6 +65,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   // Filtro de produtos
   const filteredProducts = useMemo(() => {
     return products.filter((prod) => {
+      if (prod.isArchived) return false;
       const matchCategory = selectedCategory === 'TODOS' || prod.category === selectedCategory;
       const matchSearch = 
         prod.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -174,7 +178,8 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   const handleSimulateBarcodeScan = () => {
     sound.playBeep();
     // Pega um produto aleatório ou busca o primeiro correspondente
-    const randomProd = products[Math.floor(Math.random() * products.length)];
+    const availableProducts = products.filter((product) => !product.isArchived);
+    const randomProd = availableProducts[Math.floor(Math.random() * availableProducts.length)];
     if (randomProd) {
       handleProductClick(randomProd);
     }
@@ -261,6 +266,9 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
           >
             <Barcode className="w-4 h-4" />
             <span>Scan Rápido</span>
+          </button>
+          <button onClick={() => setShowSalesHistory(true)} className="flex items-center gap-1.5 px-3.5 py-2.5 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold shrink-0">
+            <History className="w-4 h-4" /><span>Vendas</span>
           </button>
         </div>
 
@@ -878,6 +886,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
           </div>
         </div>
       )}
+      {showSalesHistory && <SalesHistoryModal onClose={() => setShowSalesHistory(false)} onProductsUpdated={onProductsUpdated} />}
     </div>
   );
 };
