@@ -166,7 +166,7 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
                 <span>Dados locais deste aparelho</span>
               </h3>
               <span className="text-xs font-mono tabular-nums text-neutral-500">
-                v2.7.0 (armazenamento local)
+                v2.8.0 (armazenamento local)
               </span>
             </div>
 

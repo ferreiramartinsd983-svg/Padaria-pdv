@@ -41,6 +41,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartFeedback, setCartFeedback] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'item'; productId: string } | { kind: 'all' } | null>(null);
   const [managerPin, setManagerPin] = useState('');
   const [deletePinError, setDeletePinError] = useState('');
@@ -105,6 +106,12 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
     });
   }, [products, selectedCategory, searchQuery]);
 
+  useEffect(() => {
+    if (!cartFeedback) return;
+    const timeout = window.setTimeout(() => setCartFeedback(''), 1600);
+    return () => window.clearTimeout(timeout);
+  }, [cartFeedback]);
+
   // Cálculos do Carrinho
   const subtotal = useMemo(() => {
     return cart.reduce((acc, item) => acc + item.totalPrice, 0);
@@ -122,12 +129,14 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   // Adicionar produto ao carrinho
   const handleProductClick = (product: Product) => {
     if (product.isWeighed) {
+      setCartFeedback(`Defina o peso de ${product.name}`);
       setScaleProduct(product);
       setScaleWeight(0.350);
       return;
     }
 
     sound.playClick();
+    setCartFeedback(`${product.name} adicionado`);
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
@@ -157,6 +166,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   const handleConfirmScale = () => {
     if (!scaleProduct) return;
     sound.playBeep();
+    setCartFeedback(`${scaleProduct.name} adicionado`);
     const calculatedTotal = scaleWeight * scaleProduct.salePrice;
 
     setCart((prev) => {
@@ -201,12 +211,12 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
       if (!(await storage.verifyManagerPin(managerPin))) { setDeletePinError('PIN do gerente incorreto. Confira e tente novamente.'); return; }
       if (deleteTarget.kind === 'all') {
         const removedNames = cart.map(item => item.product.name).join(', ');
-        setCart([]); setDiscount(0);
+        setCart([]); setDiscount(0); setCartFeedback('Itens removidos da venda');
         storage.logAction('PDV · ITENS REMOVIDOS', removedNames, 'Gerente');
       } else {
         const item = cart.find(row => row.product.id === deleteTarget.productId);
         setCart(current => current.filter(row => row.product.id !== deleteTarget.productId));
-        if (item) storage.logAction('PDV · ITEM REMOVIDO', item.product.name, 'Gerente');
+        if (item) { storage.logAction('PDV · ITEM REMOVIDO', item.product.name, 'Gerente'); setCartFeedback(`${item.product.name} removido`); }
       }
       setDeleteTarget(null); setManagerPin(''); setDeletePinError('');
     } finally { setIsCheckingManagerPin(false); }
@@ -371,12 +381,16 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
           {filteredProducts.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-neutral-300 bg-white p-10 text-center dark:border-neutral-700 dark:bg-neutral-900"><Search className="mx-auto mb-3 h-7 w-7 text-neutral-400"/><p className="font-bold">Nenhum produto encontrado</p><p className="mt-1 text-xs text-neutral-500">Mude a busca ou escolha outra categoria.</p></div>}
           {filteredProducts.map((product) => {
             const isLowStock = product.stockQuantity <= product.minStock;
+            const cartItem = cart.find(item => item.product.id === product.id);
             return (
-              <div
+              <button
+                type="button"
                 key={product.id}
                 onClick={() => handleProductClick(product)}
-                className="group relative bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-3 flex flex-col justify-between hover:border-amber-500/60 dark:hover:border-amber-500/60 hover:shadow-md transition-all cursor-pointer active:scale-[0.98] select-none"
+                aria-label={`Adicionar ${product.name} à venda, R$ ${product.salePrice.toFixed(2).replace('.', ',')}`}
+                className="group relative flex min-h-48 w-full appearance-none flex-col justify-between rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-sm transition-all hover:border-amber-500/70 hover:shadow-lg active:scale-[0.98] active:bg-amber-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-amber-400/50 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800 select-none touch-manipulation"
               >
+                {cartItem && <span className="absolute right-2 top-2 z-10 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-extrabold text-white shadow-md">No carrinho · {cartItem.product.isWeighed ? cartItem.quantity.toFixed(3) + ' kg' : '× ' + cartItem.quantity}</span>}
                 {/* Imagem do produto ou fallback sofisticado */}
                 <div className="relative w-full aspect-4/3 rounded-lg overflow-hidden bg-neutral-100 dark:bg-neutral-800 mb-2.5">
                   {product.imageUrl ? (
@@ -431,7 +445,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                     <Plus className="w-4 h-4" />
                   </div>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -576,6 +590,8 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
         </div>
       </div>
       </div>
+
+      {cartFeedback && <div role="status" aria-live="polite" className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-full bg-neutral-900 px-4 py-2.5 text-center text-xs font-bold text-white shadow-xl dark:bg-white dark:text-neutral-900 lg:bottom-5">{cartFeedback}</div>}
 
       {cart.length > 0 && <div className="fixed inset-x-3 bottom-3 z-30 lg:hidden"><button onClick={handleOpenCheckout} className={`flex min-h-16 w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-white shadow-2xl transition-all active:scale-[0.99] ${isCashOpen ? 'bg-gradient-to-r from-emerald-700 to-emerald-600' : 'bg-neutral-700'}`}><span><span className="block text-[11px] font-semibold text-white/75">{cart.length} {cart.length === 1 ? 'item' : 'itens'} · conferir venda</span><strong className="font-mono text-lg">R$ {total.toFixed(2).replace('.', ',')}</strong></span><span className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-emerald-800"><CheckCircle className="h-4 w-4"/>Pagar</span></button></div>}
 
