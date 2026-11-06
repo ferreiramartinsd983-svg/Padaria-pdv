@@ -1,39 +1,26 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Padaria Master
 
-# Run and deploy your AI Studio app
+Sistema de gestão de padaria com PDV, estoque, pedidos, caixa e tarefas.
 
-This contains everything you need to run your app locally.
+## Rodar localmente
 
-View your app in AI Studio: https://ai.studio/apps/ed360589-1b73-4539-a4aa-9b189b24f7ee
+Requisitos: Node.js.
 
-## Run Locally
+1. Instale as dependências: `npm install`
+2. Inicie a interface: `npm run dev`
+3. Para servir a versão compilada, use `npm run build` e depois `npm start`.
 
-**Prerequisites:**  Node.js
+## Assistente local
 
+O assistente funciona localmente, sem conexão com serviços de IA. Ele salva tarefas neste aparelho e oferece comandos simples:
 
-1. Install dependencies:
-   `npm install`
-2. Configure `GEMINI_API_KEY` em `.env` no servidor (mantenha a chave fora do código e do GitHub)
-3. Rode a interface e o serviço da IA:
-   `npm run dev:all`
+- `criar tarefa: conferir validade amanhã`
+- `listar tarefas`, `concluir tarefa 1`, `apagar tarefa 1`
+- `vender 2 pão francês no Pix`
+- `saída 1 bolo, motivo: avariado`
 
+Vendas e saídas de estoque exigem confirmação antes de serem registradas. As vendas pelo assistente exigem o caixa aberto.
 
-## Assistente de voz com Gemini
+## APK Android
 
-O assistente pode preparar anotações, vendas, ajustes de estoque e fichas técnicas. Ações que alteram dados só são gravadas após confirmação na tela. A chave Gemini é lida apenas pelo servidor e não deve ser colocada no APK nem em variáveis Vite.
-
-### Desenvolvimento
-
-1. Defina `GEMINI_API_KEY` em `.env` local (não envie esse arquivo ao GitHub).
-2. Rode `npm run dev:all` para abrir a interface e o endpoint local.
-
-### Hospedagem e Android
-
-1. Gere o frontend com `npm run build` e rode o serviço Node com `npm start`.
-2. Configure `GEMINI_API_KEY` como segredo do serviço e, para o APK, permita a origem `https://appassets.androidplatform.net` em `ASSISTANT_ALLOWED_ORIGINS`.
-3. Na aba **Assistente IA** do APK, informe a URL HTTPS do serviço hospedado. A chave da API fica somente no servidor.
-4. Para conferir se o servidor está ativo, abra `https://SEU-SERVICO.onrender.com/api/health`. `{"ready":true}` indica que a variável está definida; se responder 503 com erro JSON, configure `GEMINI_API_KEY` no Render. Um 503 em HTML pode indicar serviço suspenso ou ainda iniciando.
-
-A interpretação por IA requer internet. O reconhecimento do microfone depende do navegador e pode processar o áudio por um serviço externo.
+O fluxo do GitHub Actions compila a interface web e gera o APK de depuração.

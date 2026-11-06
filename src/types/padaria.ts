@@ -178,3 +178,5 @@ export interface AuditEntry { id:string; action:string; detail:string; operator:
 export interface PurchaseEntry { id:string; supplierId?:string; supplierName:string; productId:string; productName:string; quantity:number; unit:string; unitCost:number; totalCost:number; receivedAt:number; }
 
 export interface VoiceNote { id:string; title:string; text:string; createdAt:number; updatedAt:number; }
+
+export interface TaskItem { id: string; title: string; createdAt: number; dueAt?: number; completedAt?: number; }

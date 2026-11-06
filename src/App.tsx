@@ -38,7 +38,7 @@ const WelcomeScreen: React.FC<{ onEnter: () => void }> = ({ onEnter }) => (
           <p className="mt-6 max-w-xl text-base leading-7 text-orange-50/70 sm:text-lg sm:leading-8">Caixa, estoque, encomendas e produção em um só lugar. Feito para a rotina real de quem acorda cedo e faz coisa boa acontecer.</p>
           <button onClick={onEnter} className="welcome-cta group mt-8 inline-flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-amber-300 via-amber-400 to-orange-500 px-7 py-4 text-base font-black text-[#2b180b] shadow-[0_14px_45px_rgba(234,142,47,0.28)] transition-all hover:-translate-y-1 hover:shadow-[0_20px_55px_rgba(234,142,47,0.38)] active:translate-y-0 sm:w-auto"><span>Entrar na Padaria Master</span><ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1"/></button>
           <div className="mt-8 grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-4">
-            {[{label:'Vendas',Icon:ShoppingCart},{label:'Estoque',Icon:Package},{label:'Produção',Icon:ChefHat},{label:'Assistente IA',Icon:Bot}].map(({label,Icon})=><div key={label} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-3 py-3 text-xs font-semibold text-white/75 backdrop-blur"><Icon className="h-4 w-4 shrink-0 text-amber-300"/>{label}</div>)}
+            {[{label:'Vendas',Icon:ShoppingCart},{label:'Estoque',Icon:Package},{label:'Produção',Icon:ChefHat},{label:'Assistente',Icon:Bot}].map(({label,Icon})=><div key={label} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-3 py-3 text-xs font-semibold text-white/75 backdrop-blur"><Icon className="h-4 w-4 shrink-0 text-amber-300"/>{label}</div>)}
           </div>
         </section>
 

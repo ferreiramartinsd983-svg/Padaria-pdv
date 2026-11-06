@@ -1,187 +1,195 @@
-import React, { useRef, useState } from 'react';
-import { Bot, Check, CircleStop, Mic, MicOff, Send, Settings2, Sparkles, X } from 'lucide-react';
-import { Product, Recipe, Sale, VoiceNote } from '../types/padaria';
+import React, { useState } from 'react';
+import { Bot, Check, Circle, Clock3, ListTodo, PackageMinus, Send, ShoppingCart, Trash2, X } from 'lucide-react';
+import { Product, Sale, TaskItem } from '../types/padaria';
 import { storage } from '../services/storage';
 
-const ENDPOINT_KEY = 'padaria_master_assistant_endpoint_v1';
-type AssistantAction = 'answer' | 'note' | 'sale' | 'stock_adjustment' | 'recipe';
-type AssistantResult = {
-  action: AssistantAction;
-  response: string;
-  note?: { title: string; text: string };
-  sale?: { items: Array<{ productId: string; quantity: number }>; paymentMethod: string; customerName?: string };
-  stockAdjustments?: Array<{ productId: string; operation: 'ENTRADA' | 'PERDA'; quantity: number; reason: string }>;
-  recipe?: { name: string; category: Recipe['category']; yieldUnits: number; yieldDescription: string; preparationTimeMinutes: number; ingredients: Array<{ name: string; stockProductId?: string; quantity: number; unit: Recipe['ingredients'][number]['unit']; unitCost: number }>; instructions: string[] };
-};
 type ChatMessage = { id: string; role: 'user' | 'assistant'; text: string };
-type PendingAction = { kind: 'note'; note: VoiceNote } | { kind: 'sale'; sale: NonNullable<AssistantResult['sale']> } | { kind: 'stock_adjustment'; adjustments: NonNullable<AssistantResult['stockAdjustments']> } | { kind: 'recipe'; recipe: NonNullable<AssistantResult['recipe']> };
-type RecognitionEvent = { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> };
-type RecognitionLike = { lang: string; continuous: boolean; interimResults: boolean; onresult: ((event: RecognitionEvent) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null; start: () => void; stop: () => void; abort: () => void };
-type SpeechWindow = Window & { SpeechRecognition?: new () => RecognitionLike; webkitSpeechRecognition?: new () => RecognitionLike };
-const money = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
+type PendingAction =
+  | { kind: 'sale'; product: Product; quantity: number; paymentMethod: Sale['paymentMethod'] }
+  | { kind: 'stock_exit'; product: Product; quantity: number; reason: string };
+type AssistantProps = { onProductsUpdated: () => void; onSaleCompleted: (sale: Sale) => void };
 
-export const AssistantModule: React.FC<{ onProductsUpdated: () => void; onSaleCompleted: (sale: Sale) => void }> = ({ onProductsUpdated, onSaleCompleted }) => {
-  const isAndroidApp = new URLSearchParams(window.location.search).get('platform') === 'android';
-  const [endpoint, setEndpoint] = useState(() => localStorage.getItem(ENDPOINT_KEY) || (isAndroidApp ? '' : window.location.origin));
-  const [showSettings, setShowSettings] = useState(false);
+const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const money = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
+const sortedTasks = (tasks: TaskItem[]) => [...tasks].sort((a, b) => (a.completedAt ? 1 : 0) - (b.completedAt ? 1 : 0) || b.createdAt - a.createdAt);
+const formatDue = (dueAt?: number) => dueAt ? new Date(dueAt).toLocaleDateString('pt-BR') : '';
+
+export const AssistantModule: React.FC<AssistantProps> = ({ onProductsUpdated, onSaleCompleted }) => {
+  const [tasks, setTasks] = useState<TaskItem[]>(() => sortedTasks(storage.getTasks()));
+  const [products, setProducts] = useState<Product[]>(() => storage.getProducts().filter(product => !product.isArchived));
   const [command, setCommand] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<PendingAction | null>(null);
-  const [products, setProducts] = useState<Product[]>(() => storage.getProducts());
-  const [isThinking, setIsThinking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [interimText, setInterimText] = useState('');
   const [error, setError] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('');
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('DINHEIRO');
-  const recognitionRef = useRef<RecognitionLike | null>(null);
+  const [success, setSuccess] = useState('');
 
-  const addMessage = (role: ChatMessage['role'], text: string) => setMessages(current => [...current, { id: `${Date.now()}_${Math.random()}`, role, text }]);
-  const speakIntoCommand = () => {
-    if (isListening) { recognitionRef.current?.stop(); return; }
-    const SpeechRecognition = (window as SpeechWindow).SpeechRecognition || (window as SpeechWindow).webkitSpeechRecognition;
-    if (!SpeechRecognition) { setError('O reconhecimento de voz não está disponível neste navegador. Você pode digitar o comando.'); return; }
-    setError(''); setInterimText('');
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'pt-BR'; recognition.continuous = false; recognition.interimResults = true;
-    recognition.onresult = event => {
-      let finalText = ''; let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
-        else interim += event.results[i][0].transcript;
-      }
-      setInterimText(interim);
-      if (finalText.trim()) setCommand(current => `${current}${current ? ' ' : ''}${finalText.trim()}`);
-    };
-    recognition.onerror = event => { setError(event.error === 'not-allowed' ? 'Permita o uso do microfone para falar com o assistente.' : `Falha no reconhecimento de voz (${event.error}).`); setIsListening(false); };
-    recognition.onend = () => { setIsListening(false); setInterimText(''); recognitionRef.current = null; };
-    recognitionRef.current = recognition;
-    try { recognition.start(); setIsListening(true); } catch { setError('Não consegui iniciar o microfone. Tente novamente.'); }
+  const say = (text: string) => setMessages(current => [...current, { id: `${Date.now()}_${Math.random()}`, role: 'assistant', text }]);
+  const persistTasks = (updated: TaskItem[]) => {
+    const sorted = sortedTasks(updated);
+    storage.saveTasks(sorted);
+    setTasks(sorted);
+  };
+  const findProduct = (query: string): Product[] => {
+    const wanted = normalize(query);
+    const exact = products.filter(product => normalize(product.name) === wanted);
+    if (exact.length) return exact;
+    return products.filter(product => normalize(product.name).startsWith(wanted) || wanted.startsWith(normalize(product.name)));
+  };
+  const taskByNumber = (number: number) => tasks.filter(task => !task.completedAt)[number - 1];
+  const finishTask = (task: TaskItem) => {
+    persistTasks(tasks.map(item => item.id === task.id ? { ...item, completedAt: Date.now() } : item));
+    setSuccess(`Tarefa concluída: ${task.title}`);
+  };
+  const deleteTask = (task: TaskItem) => {
+    persistTasks(tasks.filter(item => item.id !== task.id));
+    setSuccess(`Tarefa removida: ${task.title}`);
   };
 
-  const testConnection = async () => {
-    const base = endpoint.trim().replace(/\/$/, '');
-    if (!base) { setError('Informe primeiro o endereço do serviço de IA.'); setShowSettings(true); return; }
-    setError(''); setConnectionStatus(''); setIsTestingConnection(true);
-    try {
-      const response = await fetch(`${base}/api/health`);
-      let result: { ready?: boolean; error?: string } = {};
-      let receivedJson = false;
-      try { result = await response.json(); receivedJson = true; } catch { /* Render pode devolver HTML enquanto inicia. */ }
-      if (result.ready) setConnectionStatus('Servidor acessível e chave Gemini configurada.');
-      else if (response.status === 503 && receivedJson) setError(result.error || 'GEMINI_API_KEY não está configurada nas variáveis do Render.');
-      else if (response.status === 503) setError('O Render ainda está iniciando ou indisponível. Aguarde alguns segundos e teste de novo.');
-      else setError(result.error || `Não consegui validar o serviço (HTTP ${response.status}).`);
-    } catch {
-      setError('Não consegui alcançar o servidor. Confira a URL e se o serviço Render está ativo.');
-    } finally { setIsTestingConnection(false); }
-  };
-
-  const askAssistant = async (event?: React.FormEvent) => {
+  const runCommand = (event?: React.FormEvent) => {
     event?.preventDefault();
     const text = command.trim();
-    if (!text || isThinking) return;
-    if (!endpoint.trim()) { setShowSettings(true); setError('Configure o endereço seguro do serviço de IA antes de enviar comandos.'); return; }
-    setError(''); setCommand(''); setPending(null); addMessage('user', text); setIsThinking(true);
-    try {
-      const base = endpoint.trim().replace(/\/$/, '');
-      const response = await fetch(`${base}/api/assistant`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: text, products: storage.getProducts().filter(p => !p.isArchived), recipes: storage.getRecipes() }),
-      });
-      let result: Record<string, unknown> = {};
-      try { result = await response.json(); } catch { /* Render pode retornar HTML ao serviço indisponível. */ }
-      if (!response.ok) {
-        const serverMessage = typeof result.error === 'string' ? result.error : '';
-        if (response.status === 503 && !serverMessage) throw new Error('Servidor do assistente indisponível (HTTP 503). Confira se o Render está ativo e tente novamente em alguns segundos.');
-        throw new Error(serverMessage || `O serviço respondeu com erro HTTP ${response.status}. Abra as configurações e teste a conexão.`);
+    if (!text) return;
+    setCommand(''); setError(''); setSuccess(''); setPending(null);
+    setMessages(current => [...current, { id: `${Date.now()}_user`, role: 'user', text }]);
+    const normalized = normalize(text);
+
+    if (/^(ajuda|comandos|como usar|\?)$/.test(normalized)) {
+      say('Comandos: “criar tarefa: conferir validade amanhã”, “listar tarefas”, “concluir tarefa 1”, “vender 2 pão francês no Pix” ou “saída 1 bolo, motivo: avariado”.');
+      return;
+    }
+
+    if (/^(listar|mostrar|ver|minhas)?\s*tarefas?(\s+pendentes)?$/.test(normalized) || normalized === 'pendencias') {
+      const pendingTasks = tasks.filter(task => !task.completedAt);
+      say(pendingTasks.length ? `Você tem ${pendingTasks.length} tarefa(s) pendente(s). Confira a lista abaixo e use “concluir tarefa 1” para marcar uma como feita.` : 'Você não tem tarefas pendentes.');
+      return;
+    }
+    if (/^(?:criar|adicionar|nova)\s+tarefa\s*(?::|-)?\s*(.+)$/i.test(text) || /^(?:lembrar|lembrete)\s+(?:de\s+)?(.+)$/i.test(text)) {
+      const match = text.match(/^(?:criar|adicionar|nova)\s+tarefa\s*(?::|-)?\s*(.+)$/i) || text.match(/^(?:lembrar|lembrete)\s+(?:de\s+)?(.+)$/i);
+      let title = match?.[1]?.trim() || '';
+      let dueAt: number | undefined;
+      const dueMatch = title.match(/\s+(hoje|amanh[aã])\s*$/i);
+      if (dueMatch) {
+        const dueDate = new Date();
+        if (normalize(dueMatch[1]) === 'amanha') dueDate.setDate(dueDate.getDate() + 1);
+        dueDate.setHours(23, 59, 59, 999);
+        dueAt = dueDate.getTime();
+        title = title.slice(0, dueMatch.index).trim();
       }
-      const interpreted = result as AssistantResult;
-      addMessage('assistant', interpreted.response || 'Entendi.');
-      setProducts(storage.getProducts());
-      if (interpreted.action === 'note' && interpreted.note?.text?.trim()) {
-        setPending({ kind: 'note', note: { id: `note_${Date.now()}`, title: interpreted.note.title?.trim() || 'Anotação por voz', text: interpreted.note.text.trim(), createdAt: Date.now(), updatedAt: Date.now() } });
-      } else if (interpreted.action === 'sale' && interpreted.sale?.items?.length) {
-        const missing = interpreted.sale.items.some(item => !products.find(product => product.id === item.productId) || !Number.isFinite(item.quantity) || item.quantity <= 0);
-        if (missing) addMessage('assistant', 'Não encontrei um dos produtos com segurança. Diga o nome exato ou confira o cadastro no estoque.');
-        else if (interpreted.sale.paymentMethod === 'MISTO') addMessage('assistant', 'Para dividir o pagamento, finalize essa venda pelo PDV, onde você pode informar cada valor.');
-        else { setPaymentMethod(interpreted.sale.paymentMethod || 'DINHEIRO'); setPending({ kind: 'sale', sale: interpreted.sale }); }
-      } else if (interpreted.action === 'stock_adjustment' && interpreted.stockAdjustments?.length) {
-        const valid = interpreted.stockAdjustments.every(row => products.some(product => product.id === row.productId) && row.quantity > 0 && Boolean(row.reason?.trim()));
-        if (!valid) addMessage('assistant', 'Faltou identificar produto, quantidade ou motivo para o ajuste. Peça novamente com esses dados.');
-        else setPending({ kind: 'stock_adjustment', adjustments: interpreted.stockAdjustments });
-      } else if (interpreted.action === 'recipe' && interpreted.recipe?.name && interpreted.recipe.yieldUnits > 0 && interpreted.recipe.ingredients?.length) {
-        setPending({ kind: 'recipe', recipe: interpreted.recipe });
-      } else if (interpreted.action === 'note') addMessage('assistant', 'Não consegui preparar o texto da anotação. Pode repetir?');
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'Não consegui falar com o assistente. Verifique a conexão e tente novamente.';
-      setError(message);
-      if (/503|temporariamente indisponível|GEMINI_API_KEY/i.test(message)) setShowSettings(true);
-    } finally { setIsThinking(false); }
+      if (!title) { say('Escreva o que precisa fazer. Exemplo: “criar tarefa: comprar farinha amanhã”.'); return; }
+      const task: TaskItem = { id: `task_${Date.now()}`, title, createdAt: Date.now(), dueAt };
+      persistTasks([task, ...tasks]);
+      say(`Tarefa criada: ${title}${dueAt ? ` · prazo ${formatDue(dueAt)}` : ''}.`);
+      return;
+    }
+    if (/^(concluir|feito|finalizar)(\s+tarefa)?\s+\d+$/.test(normalized)) {
+      const number = Number(normalized.match(/\d+$/)?.[0]);
+      const task = taskByNumber(number);
+      if (!task) { say(`Não achei a tarefa pendente ${number}. Digite “listar tarefas” para ver os números.`); return; }
+      finishTask(task); say(`Marquei “${task.title}” como concluída.`); return;
+    }
+    if (/^(apagar|excluir|remover)(\s+tarefa)?\s+\d+$/.test(normalized)) {
+      const number = Number(normalized.match(/\d+$/)?.[0]);
+      const task = taskByNumber(number);
+      if (!task) { say(`Não achei a tarefa pendente ${number}. Digite “listar tarefas” para ver os números.`); return; }
+      deleteTask(task); say(`Removi “${task.title}”.`); return;
+    }
+    if (/^(limpar|apagar|excluir) tarefas concluidas$/.test(normalized)) {
+      const remaining = tasks.filter(task => !task.completedAt);
+      persistTasks(remaining); say('Removi as tarefas concluídas.'); return;
+    }
+
+    const saleMatch = text.match(/^(?:vender|venda|registrar venda)\s+(\d+(?:[,.]\d+)?)\s+(.+)$/i);
+    if (saleMatch) {
+      let query = saleMatch[2].trim();
+      let paymentMethod: Sale['paymentMethod'] = 'DINHEIRO';
+      const paymentMatch = query.match(/\s+(?:no|na|em|via)\s+(dinheiro|pix|cart[aã]o(?:\s+de)?\s+(?:cr[eé]dito|d[eé]bito)|cr[eé]dito|d[eé]bito|fiado)$/i);
+      if (paymentMatch) {
+        const payment = normalize(paymentMatch[1]);
+        paymentMethod = payment === 'pix' ? 'PIX' : payment === 'fiado' ? 'FIADO' : payment.includes('credito') ? 'CARTAO_CREDITO' : payment.includes('debito') ? 'CARTAO_DEBITO' : 'DINHEIRO';
+        query = query.slice(0, paymentMatch.index).trim();
+      }
+      const quantity = Number(saleMatch[1].replace(',', '.'));
+      const matches = findProduct(query);
+      if (!Number.isFinite(quantity) || quantity <= 0) { say('Informe uma quantidade maior que zero. Exemplo: “vender 2 pão francês no Pix”.'); return; }
+      if (matches.length !== 1) { say(matches.length ? `Encontrei mais de um produto parecido com “${query}”. Digite o nome exato do produto.` : `Não encontrei “${query}” no estoque.`); return; }
+      const product = matches[0];
+      if (product.stockQuantity < quantity) { say(`Estoque insuficiente de ${product.name}: há ${product.stockQuantity} ${product.unit}.`); return; }
+      const cash = storage.getCashRegister();
+      if (!cash || cash.status !== 'OPEN') { say('Abra o caixa antes de registrar uma venda pelo assistente.'); return; }
+      setPending({ kind: 'sale', product, quantity, paymentMethod });
+      say(`Preparei a venda de ${quantity} ${product.unit} de ${product.name}. Confira e confirme abaixo.`);
+      return;
+    }
+
+    const exitMatch = text.match(/^(?:(?:registrar|dar)\s+)?(?:sa[ií]da|baixa|perda)(?:\s+de)?\s+(\d+(?:[,.]\d+)?)\s+(.+)$/i);
+    if (exitMatch) {
+      let details = exitMatch[2].trim();
+      const reasonMatch = details.match(/\s*(?:[,;]\s*)?(?:motivo|porque|por que)\s*[:\-]?\s*(.+)$/i);
+      const reason = reasonMatch?.[1]?.trim() || '';
+      if (reasonMatch) details = details.slice(0, reasonMatch.index).trim().replace(/[,;]$/, '').trim();
+      const quantity = Number(exitMatch[1].replace(',', '.'));
+      if (!reason) { say('Informe o motivo da saída. Exemplo: “saída 2 pão francês, motivo: queimou”.'); return; }
+      const matches = findProduct(details);
+      if (matches.length !== 1) { say(matches.length ? `Encontrei mais de um produto parecido com “${details}”. Digite o nome exato.` : `Não encontrei “${details}” no estoque.`); return; }
+      const product = matches[0];
+      if (!Number.isFinite(quantity) || quantity <= 0) { say('Informe uma quantidade maior que zero.'); return; }
+      if (product.stockQuantity < quantity) { say(`Estoque insuficiente de ${product.name}: há ${product.stockQuantity} ${product.unit}.`); return; }
+      setPending({ kind: 'stock_exit', product, quantity, reason });
+      say(`Preparei a saída de ${quantity} ${product.unit} de ${product.name} pelo motivo “${reason}”. Confira e confirme abaixo.`);
+      return;
+    }
+
+    say('Não reconheci esse comando. Toque em “Ver comandos” para ver exemplos prontos.');
   };
 
   const confirmAction = () => {
     if (!pending) return;
-    if (pending.kind === 'note') {
-      const all = [pending.note, ...storage.getVoiceNotes()]; storage.saveVoiceNotes(all); addMessage('assistant', `Anotação “${pending.note.title}” salva.`);
+    const currentProducts = storage.getProducts();
+    const product = currentProducts.find(item => item.id === pending.product.id);
+    if (!product || product.stockQuantity < pending.quantity) {
+      setError(`O estoque de ${pending.product.name} mudou. Confira o estoque e tente novamente.`);
+      setPending(null); setProducts(currentProducts.filter(item => !item.isArchived)); return;
     }
-    if (pending.kind === 'sale') {
+    if (pending.kind === 'stock_exit') {
+      const updated = currentProducts.map(item => item.id === product.id ? { ...item, stockQuantity: item.stockQuantity - pending.quantity, updatedAt: Date.now() } : item);
+      storage.saveProducts(updated);
+      storage.logAction('PERDA', `${pending.quantity} ${product.unit} · ${product.name} · ${pending.reason}`, 'Assistente local');
+      setProducts(updated.filter(item => !item.isArchived)); onProductsUpdated();
+      setSuccess(`Saída registrada: ${pending.quantity} ${product.unit} de ${product.name}.`);
+    } else {
       const cash = storage.getCashRegister();
-      if (!cash || cash.status !== 'OPEN') { setError('Abra o caixa no PDV antes de confirmar a venda. Nenhuma venda foi registrada.'); return; }
-      const items = pending.sale.items.map(item => {
-        const product = storage.getProducts().find(p => p.id === item.productId)!;
-        return { productId: product.id, productName: product.name, quantity: item.quantity, unitPrice: product.salePrice, totalPrice: product.salePrice * item.quantity, isWeighed: product.isWeighed };
-      });
-      const unavailable = items.find(item => { const product = storage.getProducts().find(p => p.id === item.productId); return !product || product.stockQuantity < item.quantity; });
-      if (unavailable) { setError(`Estoque insuficiente para ${unavailable.productName}. Nenhuma venda foi registrada.`); return; }
-      const total = items.reduce((sum, item) => sum + item.totalPrice, 0);
-      const sale: Sale = { id: `sale_${Date.now()}`, code: String(Math.floor(100000 + Math.random() * 900000)), timestamp: Date.now(), items, subtotal: total, discount: 0, total, paymentMethod: paymentMethod as Sale['paymentMethod'], amountPaid: total, changeAmount: 0, customerName: pending.sale.customerName?.trim() || undefined, cashRegisterId: cash.id, isSynced: false };
-      storage.saveSale(sale); setProducts(storage.getProducts()); onProductsUpdated(); onSaleCompleted(sale); addMessage('assistant', `Venda #${sale.code} registrada: ${money(total)}.`);
+      if (!cash || cash.status !== 'OPEN') { setError('O caixa foi fechado. Abra o caixa e tente registrar a venda novamente.'); setPending(null); return; }
+      const total = product.salePrice * pending.quantity;
+      const sale: Sale = {
+        id: `sale_${Date.now()}`, code: String(Math.floor(100000 + Math.random() * 900000)), timestamp: Date.now(),
+        items: [{ productId: product.id, productName: product.name, quantity: pending.quantity, unitPrice: product.salePrice, totalPrice: total, isWeighed: product.isWeighed }],
+        subtotal: total, discount: 0, total, paymentMethod: pending.paymentMethod, amountPaid: total, changeAmount: 0,
+        cashRegisterId: cash.id, isSynced: false,
+      };
+      storage.saveSale(sale); setProducts(storage.getProducts().filter(item => !item.isArchived)); onProductsUpdated(); onSaleCompleted(sale);
+      setSuccess(`Venda ${sale.code} registrada: ${money(total)}.`);
     }
-    if (pending.kind === 'stock_adjustment') {
-      const updated = storage.getProducts();
-      const requestedLosses = new Map<string, number>();
-      for (const row of pending.adjustments) if (row.operation === 'PERDA') requestedLosses.set(row.productId, (requestedLosses.get(row.productId) || 0) + row.quantity);
-      for (const [productId, loss] of requestedLosses) {
-        const product = updated.find(item => item.id === productId);
-        if (!product || product.stockQuantity < loss) { setError(`Estoque insuficiente para registrar a perda de ${product?.name || 'um produto'}. Nenhum ajuste foi salvo.`); return; }
-      }
-      for (const row of pending.adjustments) {
-        const product = updated.find(item => item.id === row.productId)!;
-        product.stockQuantity += row.operation === 'ENTRADA' ? row.quantity : -row.quantity; product.updatedAt = Date.now();
-        storage.logAction(row.operation === 'PERDA' ? 'PERDA' : 'ENTRADA_ESTOQUE', `${row.quantity} ${product.unit} · ${product.name} · ${row.reason}`, 'Assistente confirmado pelo operador');
-      }
-      storage.saveProducts(updated); setProducts(updated); onProductsUpdated(); addMessage('assistant', 'Ajuste de estoque registrado após sua confirmação.');
-    }
-    if (pending.kind === 'recipe') {
-      const draft = pending.recipe;
-      if (!draft.name.trim() || !Number.isFinite(draft.yieldUnits) || draft.yieldUnits <= 0 || draft.ingredients.some(item => !item.name.trim() || !Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unitCost) || item.unitCost < 0)) { setError('A ficha técnica tem campos incompletos ou quantidades inválidas. Revise o pedido e tente novamente.'); return; }
-      const ingredients = draft.ingredients.map(ingredient => ({ ...ingredient, stockProductId: ingredient.stockProductId || undefined, totalCost: ingredient.quantity * ingredient.unitCost }));
-      const rawIngredientsCost = ingredients.reduce((sum, ingredient) => sum + ingredient.totalCost, 0);
-      const overheadMarkupPercent = 15; const totalBatchCost = rawIngredientsCost * (1 + overheadMarkupPercent / 100);
-      const unitCost = totalBatchCost / draft.yieldUnits; const targetMarginPercent = 65;
-      const suggestedSalePrice = unitCost / (1 - targetMarginPercent / 100);
-      const recipe: Recipe = { id: `rec_${Date.now()}`, name: draft.name.trim(), category: draft.category, yieldUnits: draft.yieldUnits, yieldDescription: draft.yieldDescription || `${draft.yieldUnits} unidades`, preparationTimeMinutes: Math.max(1, draft.preparationTimeMinutes || 60), ingredients, rawIngredientsCost, overheadMarkupPercent, totalBatchCost, unitCost, targetMarginPercent, suggestedSalePrice, actualSalePrice: Math.ceil(suggestedSalePrice * 10) / 10, instructions: draft.instructions.filter(Boolean) };
-      storage.saveRecipes([recipe, ...storage.getRecipes()]); storage.logAction('FICHA TÉCNICA', `Criada pelo assistente: ${recipe.name}`, 'Assistente confirmado pelo operador'); addMessage('assistant', `Ficha técnica “${recipe.name}” salva. Confira os custos e vínculos de estoque antes de produzir.`);
-    }
-    setPending(null); setError('');
+    setPending(null);
   };
 
-  const cancelPending = () => { setPending(null); setError(''); };
+  const examples = [
+    { label: 'Criar tarefa', command: 'criar tarefa: conferir validade amanhã' },
+    { label: 'Listar tarefas', command: 'listar tarefas' },
+    { label: 'Vender produto', command: `vender 2 ${products[0]?.name || 'pão francês'} no Pix` },
+    { label: 'Saída de estoque', command: `saída 1 ${products[0]?.name || 'pão francês'}, motivo: avariado` },
+  ];
+
   return <div className="mx-auto w-full max-w-4xl space-y-5">
-    <header className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 text-xl font-extrabold"><Bot className="h-6 w-6 text-amber-500"/>Assistente da padaria</h2><p className="mt-1 text-sm text-neutral-500">Fale naturalmente para anotar, vender, ajustar estoque, criar fichas ou tirar dúvidas.</p></div><button onClick={()=>setShowSettings(value=>!value)} aria-label="Configurações do assistente" className="rounded-lg border p-2 dark:border-neutral-700"><Settings2 className="h-4 w-4"/></button></header>
-    {showSettings&&<section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"><label className="block text-sm font-semibold">Endereço seguro do serviço de IA<input value={endpoint} onChange={event=>{setEndpoint(event.target.value);setConnectionStatus('');}} placeholder="https://seu-servico.onrender.com" className="mt-1 w-full rounded-lg border bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-800"/></label><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="max-w-xl text-xs text-neutral-500">Informe a URL base do Render, sem /api/assistant. A chave Gemini fica somente nas variáveis do servidor; nunca cole aqui.</p><div className="flex gap-2"><button onClick={()=>void testConnection()} disabled={isTestingConnection} className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50">{isTestingConnection?'Testando…':'Testar conexão'}</button><button onClick={()=>{const cleaned=endpoint.trim().replace(/\/$/,'');if(cleaned){try{const url=new URL(cleaned);if(url.protocol!=='https:'&&url.hostname!=='localhost'&&url.hostname!=='127.0.0.1'){setError('Use uma URL HTTPS para proteger a conexão com o serviço.');return;}localStorage.setItem(ENDPOINT_KEY,cleaned);}catch{setError('Informe uma URL válida para o serviço de IA.');return;}}else localStorage.removeItem(ENDPOINT_KEY);setEndpoint(cleaned);setShowSettings(false);setError('');}}>Salvar endereço</button></div></div>{connectionStatus&&<p role="status" className="mt-2 text-sm font-semibold text-emerald-700">{connectionStatus}</p>}</section>}
-    <section className="min-h-56 space-y-3 rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">{!messages.length&&<div className="flex min-h-48 flex-col items-center justify-center text-center"><Sparkles className="mb-3 h-8 w-8 text-amber-500"/><p className="font-bold">Como posso ajudar sua padaria?</p><p className="mt-1 max-w-lg text-sm text-neutral-500">Exemplos: “Anote que a encomenda da Ana é para sábado”, “venda 2 cafés no Pix”, “deu perda de 3 coxinhas, motivo: queimaram”, “me ajuda a montar uma ficha de pão de queijo” ou “quais produtos estão acabando?”.</p></div>}{messages.map(message=><div key={message.id} className={`flex ${message.role==='user'?'justify-end':'justify-start'}`}><div className={`max-w-[90%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm ${message.role==='user'?'bg-amber-500 text-white':'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100'}`}>{message.text}</div></div>)}{isThinking&&<p className="text-sm text-neutral-500">Pensando…</p>}</section>
-    {pending&&<section className="space-y-3 rounded-2xl border-2 border-amber-400 bg-amber-50/70 p-4 dark:bg-amber-950/20"><div className="flex items-start justify-between gap-2"><div><h3 className="font-bold">Confira antes de confirmar</h3><p className="text-xs text-neutral-600 dark:text-neutral-400">O assistente só preparou a ação; nada foi gravado ainda.</p></div><button onClick={cancelPending} aria-label="Cancelar ação" className="rounded p-1"><X className="h-4 w-4"/></button></div>
-      {pending.kind==='note'&&<div className="rounded-xl bg-white p-3 dark:bg-neutral-900"><strong className="block text-sm">{pending.note.title}</strong><p className="mt-1 whitespace-pre-wrap text-sm">{pending.note.text}</p></div>}
-      {pending.kind==='sale'&&<div className="space-y-2 rounded-xl bg-white p-3 dark:bg-neutral-900">{pending.sale.items.map((item,index)=>{const product=products.find(p=>p.id===item.productId)!;return <div key={index} className="flex justify-between text-sm"><span>{item.quantity} {product.unit} · {product.name}</span><b>{money(item.quantity*product.salePrice)}</b></div>})}<label className="mt-2 block text-sm">Pagamento<select value={paymentMethod} onChange={event=>setPaymentMethod(event.target.value)} className="mt-1 block w-full rounded-lg border p-2 dark:bg-neutral-800"><option value="DINHEIRO">Dinheiro</option><option value="PIX">Pix</option><option value="CARTAO_DEBITO">Cartão de débito</option><option value="CARTAO_CREDITO">Cartão de crédito</option><option value="FIADO">Fiado</option></select></label><p className="text-right font-bold">Total: {money(pending.sale.items.reduce((sum,item)=>sum+item.quantity*(products.find(p=>p.id===item.productId)?.salePrice||0),0))}</p></div>}
-      {pending.kind==='stock_adjustment'&&<div className="space-y-2 rounded-xl bg-white p-3 dark:bg-neutral-900">{pending.adjustments.map((row,index)=>{const product=products.find(p=>p.id===row.productId);return <div key={index} className="text-sm"><b>{row.operation==='PERDA'?'Perda':'Entrada'}: {row.quantity} {product?.unit} · {product?.name||'Produto'}</b><p className="text-xs text-neutral-500">Motivo: {row.reason}</p></div>})}</div>}
-      {pending.kind==='recipe'&&<div className="space-y-2 rounded-xl bg-white p-3 dark:bg-neutral-900"><div><b>{pending.recipe.name}</b><p className="text-xs text-neutral-500">Rendimento: {pending.recipe.yieldDescription} · {pending.recipe.preparationTimeMinutes} min</p></div>{pending.recipe.ingredients.map((ingredient,index)=><div key={index} className="flex justify-between gap-2 text-sm"><span>{ingredient.quantity} {ingredient.unit} · {ingredient.name}</span><span>{ingredient.stockProductId&&products.find(p=>p.id===ingredient.stockProductId)?'Vinculado ao estoque':'Custo '+money(ingredient.unitCost)+' estimado'}</span></div>)}<p className="text-xs text-neutral-500">A ficha será salva com margem alvo de 65%. Confira custos e ingredientes antes de usar.</p></div>}
-      <div className="flex justify-end gap-2"><button onClick={cancelPending} className="rounded-lg border px-4 py-2 text-sm font-semibold">Cancelar</button><button onClick={confirmAction} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white"><Check className="h-4 w-4"/>Confirmar e salvar</button></div>
-    </section>}
-    <form onSubmit={askAssistant} className="space-y-2 rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"><div className="flex items-end gap-2"><textarea rows={2} maxLength={1600} value={command} onChange={event=>setCommand(event.target.value)} placeholder="Digite ou fale o que você precisa..." className="min-h-14 flex-1 resize-y rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm dark:border-neutral-700 dark:bg-neutral-800"/><button type="button" onClick={speakIntoCommand} aria-label={isListening?'Parar de ouvir':'Falar comando'} className={`rounded-xl p-3 text-white ${isListening?'bg-red-600':'bg-amber-500'}`}>{isListening?<MicOff className="h-5 w-5"/>:<Mic className="h-5 w-5"/>}</button><button type="submit" disabled={!command.trim()||isThinking} aria-label="Enviar comando" className="rounded-xl bg-neutral-900 p-3 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"><Send className="h-5 w-5"/></button></div>{interimText&&<p className="text-xs text-amber-700">Ouvindo: {interimText}</p>}{isListening&&<button type="button" onClick={()=>recognitionRef.current?.stop()} className="flex items-center gap-1 text-xs font-semibold text-red-600"><CircleStop className="h-4 w-4"/>Parar gravação</button>}</form>
-    {error&&<p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
-    <p className="text-xs text-neutral-500">Comandos com escrita no sistema só são executados depois da sua confirmação. A IA precisa de internet; o navegador pode enviar o áudio ao serviço de reconhecimento de voz. Evite ditar dados bancários ou informações pessoais desnecessárias.</p>
+    <header className="flex items-center gap-3"><div className="rounded-xl bg-amber-100 p-3 text-amber-700 dark:bg-amber-950 dark:text-amber-300"><Bot className="h-6 w-6"/></div><div><h2 className="text-xl font-extrabold">Assistente de tarefas</h2><p className="mt-1 text-sm text-neutral-500">Comandos simples para tarefas, vendas e saídas de estoque, salvos neste aparelho.</p></div></header>
+    <section className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="mb-3 flex items-center gap-2"><ListTodo className="h-5 w-5 text-amber-500"/><h3 className="font-bold">Comandos rápidos</h3></div>
+      <div className="flex flex-wrap gap-2">{examples.map(example => <button key={example.label} type="button" onClick={() => setCommand(example.command)} className="rounded-full border border-neutral-200 px-3 py-2 text-xs font-semibold hover:border-amber-400 hover:bg-amber-50 dark:border-neutral-700 dark:hover:bg-neutral-800">{example.label}</button>)}</div>
+      <form onSubmit={runCommand} className="mt-4 flex gap-2"><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Ex.: criar tarefa: comprar farinha amanhã" aria-label="Comando do assistente" className="min-w-0 flex-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm dark:border-neutral-700 dark:bg-neutral-800"/><button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-white hover:bg-amber-600"><Send className="h-4 w-4"/><span className="hidden sm:inline">Enviar</span></button></form>
+      <details className="mt-3 text-xs text-neutral-500"><summary className="cursor-pointer font-semibold">Ver comandos</summary><ul className="mt-2 list-inside list-disc space-y-1"><li>criar tarefa: limpar vitrine amanhã</li><li>listar tarefas · concluir tarefa 1 · apagar tarefa 1</li><li>vender 2 pão francês no Pix</li><li>saída 1 bolo, motivo: avariado</li></ul></details>
+    </section>
+    {(error || success) && <p role="status" className={`rounded-xl p-3 text-sm ${error ? 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'}`}>{error || success}</p>}
+    {messages.length > 0 && <section aria-live="polite" className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">{messages.slice(-8).map(message => <div key={message.id} className={`rounded-xl px-3 py-2 text-sm ${message.role === 'user' ? 'ml-8 bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-100' : 'mr-8 bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100'}`}>{message.text}</div>)}</section>}
+    {pending && <section className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 dark:bg-amber-950/20"><div className="flex items-start justify-between gap-2"><div className="flex items-center gap-2 font-bold">{pending.kind === 'sale' ? <ShoppingCart className="h-5 w-5"/> : <PackageMinus className="h-5 w-5"/>}{pending.kind === 'sale' ? 'Confirmar venda' : 'Confirmar saída de estoque'}</div><button onClick={() => setPending(null)} aria-label="Cancelar" className="rounded p-1"><X className="h-4 w-4"/></button></div><div className="mt-2 text-sm">{pending.quantity} {pending.product.unit} · {pending.product.name}{pending.kind === 'sale' ? <><span> · {pending.paymentMethod === 'PIX' ? 'Pix' : pending.paymentMethod === 'DINHEIRO' ? 'Dinheiro' : pending.paymentMethod.replace('CARTAO_', 'Cartão ').replace('_', ' ')}</span><b className="ml-2">{money(pending.product.salePrice * pending.quantity)}</b></> : <p className="mt-1 text-neutral-600 dark:text-neutral-300">Motivo: {pending.reason}</p>}</div><button onClick={confirmAction} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white"><Check className="h-4 w-4"/>Confirmar e registrar</button></section>}
+    <section className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"><div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 font-bold"><ListTodo className="h-5 w-5 text-amber-500"/>Minhas tarefas</h3><span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{tasks.filter(task => !task.completedAt).length} pendentes</span></div>{tasks.length === 0 ? <p className="rounded-xl border border-dashed p-5 text-center text-sm text-neutral-500">Nenhuma tarefa ainda. Digite “criar tarefa: ...” para começar.</p> : <div className="space-y-2">{tasks.map((task, index) => <article key={task.id} className="flex items-center gap-3 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800"><button onClick={() => task.completedAt ? setSuccess('Esta tarefa já está concluída.') : finishTask(task)} aria-label={task.completedAt ? 'Tarefa concluída' : 'Concluir tarefa'} className={task.completedAt ? 'text-emerald-600' : 'text-neutral-400 hover:text-emerald-600'}>{task.completedAt ? <Check className="h-5 w-5"/> : <Circle className="h-5 w-5"/>}</button><div className="min-w-0 flex-1"><p className={`text-sm font-medium ${task.completedAt ? 'text-neutral-400 line-through' : ''}`}>{index + 1}. {task.title}</p>{task.dueAt && <p className="mt-1 flex items-center gap-1 text-xs text-neutral-500"><Clock3 className="h-3 w-3"/>Prazo: {formatDue(task.dueAt)}</p>}</div><button onClick={() => deleteTask(task)} aria-label="Apagar tarefa" className="rounded-lg p-2 text-neutral-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4"/></button></article>)}</div>}</section>
   </div>;
 };

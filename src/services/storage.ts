@@ -9,7 +9,7 @@ import {
   CashRegister, 
   FinancialTransaction, 
   BakeryOrder, 
-  SyncState, ProductionBatch, Supplier, AuditEntry, PurchaseEntry, VoiceNote
+  SyncState, ProductionBatch, Supplier, AuditEntry, PurchaseEntry, VoiceNote, TaskItem
 } from '../types/padaria';
 
 const STORAGE_KEYS = {
@@ -26,6 +26,7 @@ const STORAGE_KEYS = {
   AUDIT: 'padaria_master_audit_v1',
   PURCHASES: 'padaria_master_purchases_v1',
   VOICE_NOTES: 'padaria_master_voice_notes_v1',
+  TASKS: 'padaria_master_tasks_v1',
 };
 
 export const INITIAL_PRODUCTS: Product[] = [
@@ -418,6 +419,8 @@ export const INITIAL_FINANCES: FinancialTransaction[] = [
 class StorageService {
   getVoiceNotes(): VoiceNote[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.VOICE_NOTES) || '[]'); } catch { return []; } }
   saveVoiceNotes(rows: VoiceNote[]): void { localStorage.setItem(STORAGE_KEYS.VOICE_NOTES, JSON.stringify(rows)); }
+  getTasks(): TaskItem[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.TASKS) || '[]'); } catch { return []; } }
+  saveTasks(rows: TaskItem[]): void { localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(rows)); }
   getProductions(): ProductionBatch[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.PRODUCTIONS) || '[]'); } catch { return []; } }
   saveProductions(rows: ProductionBatch[]): void { localStorage.setItem(STORAGE_KEYS.PRODUCTIONS, JSON.stringify(rows)); }
   getSuppliers(): Supplier[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.SUPPLIERS) || '[]'); } catch { return []; } }
@@ -743,6 +746,7 @@ class StorageService {
       audit: this.getAudit(),
       purchases: this.getPurchases(),
       voiceNotes: this.getVoiceNotes(),
+      tasks: this.getTasks(),
     };
     return JSON.stringify(backup, null, 2);
   }
@@ -761,6 +765,7 @@ class StorageService {
       if (data.audit) localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(data.audit));
       if (data.purchases) this.savePurchases(data.purchases);
       if (data.voiceNotes) this.saveVoiceNotes(data.voiceNotes);
+      if (data.tasks) this.saveTasks(data.tasks);
       return true;
     } catch {
       return false;
@@ -775,6 +780,7 @@ class StorageService {
     localStorage.removeItem(STORAGE_KEYS.FINANCES);
     localStorage.removeItem(STORAGE_KEYS.ORDERS);
     localStorage.removeItem(STORAGE_KEYS.SYNC);
+    localStorage.removeItem(STORAGE_KEYS.TASKS);
   }
 }
 

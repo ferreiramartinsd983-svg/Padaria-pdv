@@ -75,7 +75,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'recipes', label: 'Fichas Técnicas' },
     { id: 'operations', label: 'Produção & Gestão' },
     { id: 'voice-notes', label: 'Anotações por voz' },
-    { id: 'assistant', label: 'Assistente IA' },
+    { id: 'assistant', label: 'Assistente de tarefas' },
     { id: 'orders', label: 'Encomendas' },
     { id: 'cash', label: 'Controle de Caixa' },
     { id: 'finance', label: 'DRE Financeiro' },
@@ -201,7 +201,7 @@ export const Header: React.FC<HeaderProps> = ({
           { id: 'pdv', label: 'PDV', Icon: ShoppingCart },
           { id: 'stock', label: 'Estoque', Icon: Package },
           { id: 'orders', label: 'Pedidos', Icon: ClipboardList },
-          { id: 'assistant', label: 'Assistente', Icon: Bot },
+          { id: 'assistant', label: 'Tarefas', Icon: Bot },
         ].map(({ id, label, Icon }) => {
           const active = currentTab === id;
           return <button key={id} onClick={() => { onSelectTab(id); setIsMoreMenuOpen(false); }} aria-current={active ? 'page' : undefined} className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold transition-colors ${active ? 'bg-gradient-to-r from-amber-700 to-amber-600 text-white shadow-md shadow-amber-800/20 ring-1 ring-amber-400/40' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'}`}><Icon className="h-5 w-5"/><span className="truncate">{label}</span></button>;
