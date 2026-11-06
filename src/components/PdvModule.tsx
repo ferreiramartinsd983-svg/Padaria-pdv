@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Search, 
   Barcode, 
@@ -36,6 +36,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory>('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState<number>(0);
   
@@ -152,15 +153,9 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
     const calculatedTotal = scaleWeight * scaleProduct.salePrice;
 
     setCart((prev) => {
-      return [
-        ...prev,
-        {
-          product: scaleProduct,
-          quantity: scaleWeight,
-          unitPrice: scaleProduct.salePrice,
-          totalPrice: calculatedTotal,
-        },
-      ];
+      const existing = prev.find(item => item.product.id === scaleProduct.id);
+      if (existing) return prev.map(item => item.product.id === scaleProduct.id ? { ...item, quantity: item.quantity + scaleWeight, totalPrice: item.totalPrice + calculatedTotal } : item);
+      return [...prev, { product: scaleProduct, quantity: scaleWeight, unitPrice: scaleProduct.salePrice, totalPrice: calculatedTotal }];
     });
     setScaleProduct(null);
   };
@@ -198,16 +193,31 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
     setIsCheckoutOpen(true);
   };
 
-  // Simular Leitura de Código de Barras
-  const handleSimulateBarcodeScan = () => {
-    sound.playBeep();
-    // Pega um produto aleatório ou busca o primeiro correspondente
-    const availableProducts = products.filter((product) => !product.isArchived);
-    const randomProd = availableProducts[Math.floor(Math.random() * availableProducts.length)];
-    if (randomProd) {
-      handleProductClick(randomProd);
-    }
+  // Leitores USB/Bluetooth digitam o código no campo e enviam Enter
+  const handleBarcodeEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    const code = searchQuery.trim();
+    const matchedProduct = products.find(product => !product.isArchived && product.barcode.trim() === code);
+    if (!matchedProduct) return;
+    event.preventDefault();
+    handleProductClick(matchedProduct);
+    setSearchQuery('');
   };
+
+  const focusBarcodeReader = () => {
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  };
+
+  // Atalhos de caixa: F2 paga e F3 foca a busca/leitor
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.key === 'F2') { event.preventDefault(); handleOpenCheckout(); }
+      if (event.key === 'F3') { event.preventDefault(); searchInputRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  });
 
   // Finalizar Venda
   const handleFinalizeSale = () => {
@@ -262,7 +272,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-24 lg:pb-0">
       <section className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3"><div className={"w-10 h-10 rounded-xl flex items-center justify-center " + (isCashOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>{isCashOpen ? <Unlock className="w-5 h-5"/> : <Lock className="w-5 h-5"/>}</div><div><div className="font-bold text-sm">Caixa {isCashOpen ? 'aberto' : 'fechado'}</div><div className="text-xs text-neutral-500">{isCashOpen ? cashRegister.operatorName + ' · Gaveta esperada: R$ ' + cashRegister.expectedCashAmount.toFixed(2).replace('.', ',') : 'Abra o caixa para iniciar vendas'}</div></div></div>
         {isCashOpen ? <button onClick={() => { setCountedCash(cashRegister.expectedCashAmount); setCashModal('close'); }} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-600 text-white text-xs font-bold"><Lock className="w-4 h-4"/>Fechar caixa</button> : <button onClick={() => setCashModal('open')} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"><Unlock className="w-4 h-4"/>Abrir caixa</button>}
@@ -276,9 +286,11 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               type="text"
+              ref={searchInputRef}
+              onKeyDown={handleBarcodeEnter}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar por nome do produto ou código de barras..."
+              placeholder="Buscar nome ou passe o leitor de código de barras..."
               className="w-full pl-9 pr-4 py-2.5 bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-neutral-400"
             />
             {searchQuery && (
@@ -292,12 +304,12 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
           </div>
 
           <button
-            onClick={handleSimulateBarcodeScan}
-            title="Simular bipe de leitor de código de barras"
+            onClick={focusBarcodeReader}
+            title="Focar leitor de código de barras (F3)"
             className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 rounded-lg text-xs font-semibold transition-all shrink-0 active:scale-95"
           >
             <Barcode className="w-4 h-4" />
-            <span>Scan Rápido</span>
+            <span>Leitor</span>
           </button>
           <button onClick={() => setShowSalesHistory(true)} className="flex items-center gap-1.5 px-3.5 py-2.5 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold shrink-0">
             <History className="w-4 h-4" /><span>Vendas</span>
@@ -319,13 +331,16 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                 }`}
               >
                 {cat.label}
+                {cat.id === 'TODOS' && <span className="ml-1 opacity-75">{products.filter(product => !product.isArchived).length}</span>}
               </button>
             );
           })}
         </div>
 
+        <div className="flex items-center justify-between px-1 text-xs text-neutral-500"><span>{searchQuery ? `Resultados para “${searchQuery}”` : selectedCategory === 'TODOS' ? 'Produtos disponíveis' : categories.find(category => category.id === selectedCategory)?.label}</span><span>{filteredProducts.length} {filteredProducts.length === 1 ? 'produto' : 'produtos'}</span></div>
         {/* Grade de Produtos Touch-Friendly */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3.5 overflow-y-auto max-h-[calc(100vh-14rem)] pr-1">
+          {filteredProducts.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-neutral-300 bg-white p-10 text-center dark:border-neutral-700 dark:bg-neutral-900"><Search className="mx-auto mb-3 h-7 w-7 text-neutral-400"/><p className="font-bold">Nenhum produto encontrado</p><p className="mt-1 text-xs text-neutral-500">Mude a busca ou escolha outra categoria.</p></div>}
           {filteredProducts.map((product) => {
             const isLowStock = product.stockQuantity <= product.minStock;
             return (
@@ -536,6 +551,8 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
       </div>
       </div>
 
+      {cart.length > 0 && <div className="fixed inset-x-3 bottom-3 z-30 lg:hidden"><button onClick={handleOpenCheckout} className={`flex min-h-16 w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-white shadow-2xl transition-all active:scale-[0.99] ${isCashOpen ? 'bg-gradient-to-r from-emerald-700 to-emerald-600' : 'bg-neutral-700'}`}><span><span className="block text-[11px] font-semibold text-white/75">{cart.length} {cart.length === 1 ? 'item' : 'itens'} · conferir venda</span><strong className="font-mono text-lg">R$ {total.toFixed(2).replace('.', ',')}</strong></span><span className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-emerald-800"><CheckCircle className="h-4 w-4"/>Pagar</span></button></div>}
+
       {cashModal && <div className="fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-4"><form onSubmit={cashModal === 'open' ? openCashRegister : closeCashRegister} className="bg-white dark:bg-neutral-900 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4"><h2 className="text-lg font-bold">{cashModal === 'open' ? 'Abrir caixa' : 'Fechar caixa'}</h2>{cashModal === 'open' ? <><label className="block text-sm">Operador<input required value={cashOperator} onChange={e=>setCashOperator(e.target.value)} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label><label className="block text-sm">Fundo de troco inicial (R$)<input required type="number" min="0" step="0.01" value={openingAmount} onChange={e=>setOpeningAmount(Number(e.target.value))} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label></> : <><div className="rounded-lg bg-neutral-100 dark:bg-neutral-800 p-3 text-sm">Valor esperado na gaveta: <strong>R$ {cashRegister.expectedCashAmount.toFixed(2).replace('.', ',')}</strong></div><label className="block text-sm">Dinheiro contado (R$)<input required type="number" min="0" step="0.01" value={countedCash} onChange={e=>setCountedCash(Number(e.target.value))} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label></>}<div className="flex gap-2 justify-end"><button type="button" onClick={()=>setCashModal(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button><button type="submit" className={"rounded-lg px-4 py-2 text-sm font-bold text-white " + (cashModal === 'open' ? 'bg-emerald-600' : 'bg-red-600')}>{cashModal === 'open' ? 'Confirmar abertura' : 'Confirmar fechamento'}</button></div></form></div>}
 
       {/* Modal 1: Balança Eletrônica Touch para Produtos no Peso */}
@@ -640,7 +657,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
       {/* Modal 2: Finalização de Pagamento (Dinheiro, PIX, Cartão, Fiado) */}
       {isCheckoutOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg max-h-[calc(100dvh-2rem)] w-full overflow-y-auto p-5 sm:p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-200 dark:border-neutral-800">
               <div>
                 <h3 className="font-bold text-lg text-neutral-900 dark:text-neutral-100">
@@ -671,8 +688,14 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
               </div>
             </div>
 
-            {/* Formas de Pagamento em Botões */}
-            <div className="grid grid-cols-4 gap-2 mb-4">
+            <section className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50">
+              <div className="mb-2 flex items-center justify-between"><h4 className="text-xs font-extrabold uppercase tracking-wide text-neutral-600 dark:text-neutral-300">Itens da venda</h4><span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-neutral-500 dark:bg-neutral-700">{cart.length} {cart.length === 1 ? 'item' : 'itens'}</span></div>
+              <div className="max-h-36 space-y-2 overflow-y-auto pr-1">{cart.map(item=><div key={item.product.id} className="flex items-center justify-between gap-3 text-xs"><div className="min-w-0"><p className="truncate font-semibold text-neutral-800 dark:text-neutral-100">{item.product.name}</p><p className="text-[10px] text-neutral-500">{item.product.isWeighed ? `${item.quantity.toFixed(3)} kg` : `${item.quantity} un`} × R$ {item.unitPrice.toFixed(2).replace('.', ',')}</p></div><strong className="shrink-0 font-mono">R$ {item.totalPrice.toFixed(2).replace('.', ',')}</strong></div>)}</div>
+              <div className="mt-2 flex justify-between border-t border-neutral-200 pt-2 text-xs dark:border-neutral-700"><span>Desconto</span><span>- R$ {discount.toFixed(2).replace('.', ',')}</span></div>
+            </section>
+
+            {/* Escolha da forma de pagamento */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
               {[
                 { id: 'DINHEIRO', label: 'Dinheiro', icon: Banknote },
                 { id: 'PIX', label: 'PIX', icon: QrCode },

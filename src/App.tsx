@@ -13,7 +13,7 @@ import { VoiceNotesModule } from './components/VoiceNotesModule';
 import { AssistantModule } from './components/AssistantModule';
 import { Product, Sale } from './types/padaria';
 import { storage } from './services/storage';
-import { ArrowRight, Bot, ChefHat, Package, ShoppingCart, Sparkles, Store, Mic2 } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Bot, ChefHat, Package, ShoppingCart, Sparkles, Store, Mic2 } from 'lucide-react';
 import frenchBreadImage from './assets/images/bakery_pao_frances_1793807977222.jpg';
 import cheeseBreadImage from './assets/images/bakery_pao_de_queijo_1793807977568.jpg';
 import cakeImage from './assets/images/bakery_bolo_artesanal_1793807978147.jpg';
@@ -60,6 +60,8 @@ const WelcomeScreen: React.FC<{ onEnter: () => void }> = ({ onEnter }) => (
 export default function App() {
   const isAndroidApp = new URLSearchParams(window.location.search).get('platform') === 'android';
   const [showWelcome, setShowWelcome] = useState(true);
+  const [isPdvStandalone, setIsPdvStandalone] = useState(false);
+  const [previousTab, setPreviousTab] = useState<string>('pdv');
   const [currentTab, setCurrentTab] = useState<string>('pdv');
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -102,13 +104,39 @@ export default function App() {
     handleRefreshProducts();
   };
 
+  const handleSelectTab = (tab: string) => {
+    if (tab === 'pdv') {
+      setPreviousTab(currentTab);
+      setCurrentTab('pdv');
+      setIsPdvStandalone(true);
+      return;
+    }
+    setCurrentTab(tab);
+    setIsPdvStandalone(false);
+  };
+
+  const handleExitStandalonePdv = () => {
+    setIsPdvStandalone(false);
+    if (previousTab !== 'pdv') setCurrentTab(previousTab);
+  };
+
   if (showWelcome) return <WelcomeScreen onEnter={() => setShowWelcome(false)} />;
+
+  if (isPdvStandalone) return (
+    <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100">
+      <div className="sticky top-0 z-40 flex items-center justify-between border-b border-neutral-200 bg-[#fffaf3]/95 px-4 py-3 shadow-sm backdrop-blur-xl dark:border-neutral-800 dark:bg-neutral-900/95 sm:px-6">
+        <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-700 text-white shadow-lg"><Store className="h-5 w-5"/></div><div><p className="font-extrabold">PDV · Frente de Caixa</p><p className="text-[11px] text-neutral-500">Modo de venda dedicado</p></div></div>
+        <button onClick={handleExitStandalonePdv} aria-label="Voltar ao sistema" className="flex min-h-11 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-bold shadow-sm transition-colors hover:border-amber-400 hover:bg-amber-50 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-neutral-700 sm:px-4"><ArrowLeft className="h-4 w-4"/><span className="hidden sm:inline">Voltar ao sistema</span></button>
+      </div>
+      <main className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 lg:p-6"><PdvModule products={products} onProductsUpdated={handleRefreshProducts} onSaleCompleted={handleSaleCompleted} /></main>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col font-sans transition-colors">
       <Header
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={handleSelectTab}
         isDark={isDark}
         onToggleTheme={() => setIsDark(!isDark)}
         viewMode={viewMode}
@@ -146,7 +174,7 @@ export default function App() {
         {viewMode === 'tablet' && (
           <div className="w-full max-w-[1024px] bg-white dark:bg-neutral-900 border-8 border-neutral-800 dark:border-neutral-700 rounded-3xl p-4 shadow-2xl overflow-hidden min-h-[640px]">
             <div className="flex items-center justify-between pb-2 mb-3 border-b border-neutral-200 dark:border-neutral-800 text-[11px] text-neutral-400">
-              <span className="font-bold">Tablet POS Padaria Master 2.5 (10.1" Touch)</span>
+              <span className="font-bold">Tablet POS Padaria Master 2.6 (10.1" Touch)</span>
               <span>1280 x 800 · Android 15</span>
             </div>
             {currentTab === 'pdv' && (
@@ -202,7 +230,7 @@ export default function App() {
 
       {/* Footer simples e profissional */}
       <footer className="py-4 border-t border-neutral-200 dark:border-neutral-800 text-center text-xs text-neutral-400 bg-white/50 dark:bg-neutral-900/50">
-        <p>Padaria Master 2.5 · Gestão da padaria neste dispositivo</p>
+        <p>Padaria Master 2.6 · Gestão da padaria neste dispositivo</p>
       </footer>
     </div>
   );
