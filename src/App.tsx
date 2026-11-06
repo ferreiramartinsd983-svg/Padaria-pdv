@@ -13,9 +13,53 @@ import { VoiceNotesModule } from './components/VoiceNotesModule';
 import { AssistantModule } from './components/AssistantModule';
 import { Product, Sale } from './types/padaria';
 import { storage } from './services/storage';
+import { ArrowRight, Bot, ChefHat, Package, ShoppingCart, Sparkles, Store, Mic2 } from 'lucide-react';
+import frenchBreadImage from './assets/images/bakery_pao_frances_1793807977222.jpg';
+import cheeseBreadImage from './assets/images/bakery_pao_de_queijo_1793807977568.jpg';
+import cakeImage from './assets/images/bakery_bolo_artesanal_1793807978147.jpg';
+import coffeeImage from './assets/images/bakery_cafe_espresso_1793807978740.jpg';
+
+
+const WelcomeScreen: React.FC<{ onEnter: () => void }> = ({ onEnter }) => (
+  <div className="welcome-screen relative min-h-[100svh] overflow-hidden bg-[#21150f] text-white">
+    <div aria-hidden="true" className="welcome-glow pointer-events-none absolute inset-0"/>
+    <div aria-hidden="true" className="welcome-orbit welcome-orbit-one pointer-events-none absolute -right-28 -top-40 h-[34rem] w-[34rem] rounded-full border border-amber-100/10"/>
+    <div aria-hidden="true" className="welcome-orbit welcome-orbit-two pointer-events-none absolute -bottom-72 -left-24 h-[42rem] w-[42rem] rounded-full border border-amber-100/10"/>
+    <div className="relative mx-auto flex min-h-[100svh] max-w-7xl flex-col px-5 py-5 sm:px-8 sm:py-8 lg:px-12">
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 via-amber-500 to-orange-700 shadow-xl shadow-orange-950/40"><Store className="h-5 w-5"/></div><div><p className="text-sm font-black tracking-[0.17em]">PADARIA<span className="text-amber-300">MASTER</span></p><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/50">Gestão com sabor</p></div></div>
+        <span className="hidden items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-bold text-white/75 backdrop-blur sm:flex"><Sparkles className="h-4 w-4 text-amber-300"/>Seu negócio, em boas mãos</span>
+      </header>
+
+      <main className="grid flex-1 items-center gap-10 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-14">
+        <section className="welcome-copy relative z-10 max-w-2xl">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-amber-200/20 bg-amber-200/10 px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.16em] text-amber-100"><span className="h-2 w-2 animate-pulse rounded-full bg-amber-300"/>Mais sabor. Menos correria.</div>
+          <h1 className="text-5xl font-black leading-[0.98] tracking-[-0.055em] sm:text-6xl lg:text-7xl">O seu dia começa no forno.<br/><span className="welcome-headline text-amber-300">A gestão decola daqui.</span></h1>
+          <p className="mt-6 max-w-xl text-base leading-7 text-orange-50/70 sm:text-lg sm:leading-8">Caixa, estoque, encomendas e produção em um só lugar. Feito para a rotina real de quem acorda cedo e faz coisa boa acontecer.</p>
+          <button onClick={onEnter} className="welcome-cta group mt-8 inline-flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-amber-300 via-amber-400 to-orange-500 px-7 py-4 text-base font-black text-[#2b180b] shadow-[0_14px_45px_rgba(234,142,47,0.28)] transition-all hover:-translate-y-1 hover:shadow-[0_20px_55px_rgba(234,142,47,0.38)] active:translate-y-0 sm:w-auto"><span>Entrar na Padaria Master</span><ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1"/></button>
+          <div className="mt-8 grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-4">
+            {[{label:'Vendas',Icon:ShoppingCart},{label:'Estoque',Icon:Package},{label:'Produção',Icon:ChefHat},{label:'Assistente IA',Icon:Bot}].map(({label,Icon})=><div key={label} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-3 py-3 text-xs font-semibold text-white/75 backdrop-blur"><Icon className="h-4 w-4 shrink-0 text-amber-300"/>{label}</div>)}
+          </div>
+        </section>
+
+        <section aria-label="Vitrine da Padaria Master" className="welcome-showcase relative mx-auto w-full max-w-[34rem]">
+          <div className="welcome-photo-grid grid grid-cols-2 gap-3 sm:gap-4">
+            <figure className="welcome-photo welcome-photo-a relative overflow-hidden rounded-[1.75rem] border border-white/15"><img src={frenchBreadImage} alt="Pães fresquinhos saindo do forno" className="h-full min-h-40 w-full object-cover sm:min-h-56"/><figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-4 pb-4 pt-12 text-sm font-bold">Feito fresquinho</figcaption></figure>
+            <figure className="welcome-photo welcome-photo-b relative mt-8 overflow-hidden rounded-[1.75rem] border border-white/15"><img src={cakeImage} alt="Bolo artesanal da padaria" className="h-full min-h-40 w-full object-cover sm:min-h-56"/><figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-4 pb-4 pt-12 text-sm font-bold">Cada detalhe conta</figcaption></figure>
+            <figure className="welcome-photo welcome-photo-c relative -mt-8 overflow-hidden rounded-[1.75rem] border border-white/15"><img src={cheeseBreadImage} alt="Pão de queijo dourado" className="h-full min-h-40 w-full object-cover sm:min-h-56"/><figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-4 pb-4 pt-12 text-sm font-bold">O cheirinho que conquista</figcaption></figure>
+            <figure className="welcome-photo welcome-photo-d relative overflow-hidden rounded-[1.75rem] border border-white/15"><img src={coffeeImage} alt="Café espresso servido na padaria" className="h-full min-h-40 w-full object-cover sm:min-h-56"/><figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-4 pb-4 pt-12 text-sm font-bold">Um bom dia em cada xícara</figcaption></figure>
+          </div>
+          <div className="welcome-float absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 rounded-2xl border border-white/25 bg-[#2c1c14]/90 px-4 py-3 shadow-2xl backdrop-blur-xl"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-300 text-[#2b180b]"><Mic2 className="h-5 w-5"/></div><div><p className="text-sm font-extrabold">Sua padaria no ritmo</p><p className="text-[11px] text-white/60">Uma equipe inteira no seu bolso</p></div></div>
+        </section>
+      </main>
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-4 text-[11px] font-medium text-white/40"><span>Padaria Master · Gestão que acompanha o seu talento</span><span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/>Pronto para começar</span></footer>
+    </div>
+  </div>
+);
 
 export default function App() {
   const isAndroidApp = new URLSearchParams(window.location.search).get('platform') === 'android';
+  const [showWelcome, setShowWelcome] = useState(true);
   const [currentTab, setCurrentTab] = useState<string>('pdv');
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -57,6 +101,8 @@ export default function App() {
   const handleSaleCompleted = (sale: Sale) => {
     handleRefreshProducts();
   };
+
+  if (showWelcome) return <WelcomeScreen onEnter={() => setShowWelcome(false)} />;
 
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col font-sans transition-colors">
@@ -100,7 +146,7 @@ export default function App() {
         {viewMode === 'tablet' && (
           <div className="w-full max-w-[1024px] bg-white dark:bg-neutral-900 border-8 border-neutral-800 dark:border-neutral-700 rounded-3xl p-4 shadow-2xl overflow-hidden min-h-[640px]">
             <div className="flex items-center justify-between pb-2 mb-3 border-b border-neutral-200 dark:border-neutral-800 text-[11px] text-neutral-400">
-              <span className="font-bold">Tablet POS Padaria Master 2.3 (10.1" Touch)</span>
+              <span className="font-bold">Tablet POS Padaria Master 2.4 (10.1" Touch)</span>
               <span>1280 x 800 · Android 15</span>
             </div>
             {currentTab === 'pdv' && (
@@ -156,7 +202,7 @@ export default function App() {
 
       {/* Footer simples e profissional */}
       <footer className="py-4 border-t border-neutral-200 dark:border-neutral-800 text-center text-xs text-neutral-400 bg-white/50 dark:bg-neutral-900/50">
-        <p>Padaria Master 2.3 · Gestão da padaria neste dispositivo</p>
+        <p>Padaria Master 2.4 · Gestão da padaria neste dispositivo</p>
       </footer>
     </div>
   );
