@@ -85,6 +85,7 @@ export const StockModule: React.FC<StockModuleProps> = ({
         : product
       );
       storage.saveProducts(updated);
+      storage.logAction('ESTOQUE', 'Produto atualizado: '+formData.name.trim());
       onProductsUpdated();
       setEditingProduct(null);
       setIsAddModalOpen(false);
@@ -103,6 +104,7 @@ export const StockModule: React.FC<StockModuleProps> = ({
       updatedAt: Date.now()
     };
     storage.saveProducts([newProd, ...products]);
+    storage.logAction('ESTOQUE', 'Produto cadastrado: '+newProd.name);
     onProductsUpdated();
     setIsAddModalOpen(false);
   };
@@ -141,6 +143,7 @@ export const StockModule: React.FC<StockModuleProps> = ({
     });
 
     storage.saveProducts(updated);
+    storage.logAction('ESTOQUE', `${adjustType} ${adjustAmount} ${selectedProduct.unit} · ${selectedProduct.name}`);
     onProductsUpdated();
     setIsAdjustModalOpen(false);
     setSelectedProduct(null);

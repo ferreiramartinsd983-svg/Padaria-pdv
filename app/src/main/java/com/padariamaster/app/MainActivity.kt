@@ -1,10 +1,13 @@
 package com.padariamaster.app
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Base64
 import android.webkit.JavascriptInterface
+import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebChromeClient.FileChooserParams
@@ -21,6 +24,7 @@ import androidx.webkit.WebViewAssetLoader
 class MainActivity : ComponentActivity() {
     private var webView: WebView? = null
     private var pendingUploadCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingMicrophoneRequest: PermissionRequest? = null
     private var pendingDownloadName: String = "PadariaMaster-backup.json"
     private var pendingDownloadMime: String = "application/octet-stream"
     private var pendingDownloadBytes: ByteArray? = null
@@ -28,6 +32,12 @@ class MainActivity : ComponentActivity() {
     private val openBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         pendingUploadCallback?.onReceiveValue(uri?.let { arrayOf(it) })
         pendingUploadCallback = null
+    }
+
+    private val requestMicrophone = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val request = pendingMicrophoneRequest
+        pendingMicrophoneRequest = null
+        if (granted && request != null) request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) else request?.deny()
     }
 
     private val saveDownload = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -72,6 +82,27 @@ class MainActivity : ComponentActivity() {
                 }
             }
             webChromeClient = object : WebChromeClient() {
+                override fun onPermissionRequest(request: PermissionRequest) {
+                    val asksOnlyForAudio = request.resources.isNotEmpty() && request.resources.all { it == PermissionRequest.RESOURCE_AUDIO_CAPTURE }
+                    val trustedOrigin = request.origin.scheme == "https" && request.origin.host == APP_ASSETS_HOST
+                    if (!trustedOrigin || !asksOnlyForAudio) {
+                        request.deny()
+                        return
+                    }
+                    pendingMicrophoneRequest?.deny()
+                    pendingMicrophoneRequest = request
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        pendingMicrophoneRequest = null
+                        request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                    } else {
+                        requestMicrophone.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+
+                override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                    if (pendingMicrophoneRequest == request) pendingMicrophoneRequest = null
+                }
+
                 override fun onShowFileChooser(
                     webView: WebView?,
                     filePathCallback: ValueCallback<Array<Uri>>?,
@@ -109,6 +140,8 @@ class MainActivity : ComponentActivity() {
             stopLoading()
             destroy()
         }
+        pendingMicrophoneRequest?.deny()
+        pendingMicrophoneRequest = null
         webView = null
         super.onDestroy()
     }

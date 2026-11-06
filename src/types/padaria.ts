@@ -12,7 +12,8 @@ export type PaymentMethod =
   | 'PIX' 
   | 'CARTAO_DEBITO' 
   | 'CARTAO_CREDITO' 
-  | 'FIADO';
+  | 'FIADO'
+  | 'MISTO';
 
 export interface Product {
   id: string;
@@ -57,6 +58,7 @@ export interface Sale {
   discount: number;
   total: number;
   paymentMethod: PaymentMethod;
+  paymentBreakdown?: Partial<Record<Exclude<PaymentMethod, 'MISTO'>, number>>;
   amountPaid: number;
   changeAmount: number;
   customerName?: string;
@@ -70,6 +72,7 @@ export interface Sale {
 
 export interface Ingredient {
   name: string;
+  stockProductId?: string;
   quantity: number;
   unit: 'g' | 'kg' | 'ml' | 'l' | 'un';
   unitCost: number; // Custo por kg/l/un
@@ -166,3 +169,12 @@ export interface SyncState {
     status: 'PENDING' | 'SYNCED' | 'FAILED';
   }>;
 }
+
+
+export interface ProductionBatch { id:string; recipeId:string; recipeName:string; quantity:number; productId:string; producedAt:number; operator:string; cost:number; }
+export interface Supplier { id:string; name:string; phone:string; document:string; notes:string; }
+export interface AuditEntry { id:string; action:string; detail:string; operator:string; timestamp:number; }
+
+export interface PurchaseEntry { id:string; supplierId?:string; supplierName:string; productId:string; productName:string; quantity:number; unit:string; unitCost:number; totalCost:number; receivedAt:number; }
+
+export interface VoiceNote { id:string; title:string; text:string; createdAt:number; updatedAt:number; }

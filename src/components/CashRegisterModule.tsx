@@ -94,7 +94,8 @@ export const CashRegisterModule: React.FC<CashRegisterModuleProps> = ({ onCashUp
         PIX: 0,
         CARTAO_DEBITO: 0,
         CARTAO_CREDITO: 0,
-        FIADO: 0
+        FIADO: 0,
+        MISTO: 0
       },
       expectedCashAmount: Number(initialAmount)
     };

@@ -43,6 +43,7 @@ export const OrdersModule: React.FC = () => {
     });
     setOrders(updated);
     storage.saveOrders(updated);
+    storage.logAction('ENCOMENDA', `Status alterado para ${nextStatus} · ${orderId}`, 'Operador');
   };
 
   const handleCreateOrder = (e: React.FormEvent) => {
@@ -69,6 +70,7 @@ export const OrdersModule: React.FC = () => {
     const all = [newOrder, ...orders];
     setOrders(all);
     storage.saveOrders(all);
+    storage.logAction('ENCOMENDA', `Criada para ${customerName} · retirada ${deliveryDate} ${deliveryTime}`, 'Operador');
     setIsAddModalOpen(false);
 
     // Reset
@@ -229,6 +231,7 @@ export const OrdersModule: React.FC = () => {
                     </span>
                   )}
                 </div>
+                {isReady && order.customerPhone && <button onClick={() => { const phone=order.customerPhone.replace(/\D/g,''); const text=encodeURIComponent(`Olá, ${order.customerName}! Sua encomenda está pronta para retirada na Padaria Master.`); window.open(`https://wa.me/${phone}?text=${text}`,'_blank','noopener,noreferrer'); }} className="w-full mt-2 rounded-lg border border-emerald-300 text-emerald-700 py-2 text-xs font-bold">Avisar cliente pelo WhatsApp</button>}
               </div>
             </div>
           );

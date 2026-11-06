@@ -13,10 +13,11 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { Recipe, Ingredient } from '../types/padaria';
+import { Recipe, Ingredient, Product } from '../types/padaria';
 import { storage } from '../services/storage';
 
 export const RecipesModule: React.FC = () => {
+  const stockProducts: Product[] = storage.getProducts();
   const [recipes, setRecipes] = useState<Recipe[]>(() => storage.getRecipes());
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(recipes[0]?.id || null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -83,7 +84,7 @@ export const RecipesModule: React.FC = () => {
   const handleDeleteRecipe = () => {
     if (!recipeToDelete) return;
     const updated = recipes.filter((recipe) => recipe.id !== recipeToDelete.id);
-    setRecipes(updated); storage.saveRecipes(updated);
+    setRecipes(updated); storage.saveRecipes(updated); storage.logAction('FICHA TÉCNICA', 'Ficha excluída: '+recipeToDelete.name);
     if (expandedRecipeId === recipeToDelete.id) setExpandedRecipeId(updated[0]?.id || null);
     setRecipeToDelete(null);
   };
@@ -118,7 +119,7 @@ export const RecipesModule: React.FC = () => {
     };
 
     const all = editingRecipe ? recipes.map((recipe) => recipe.id === editingRecipe.id ? newRecipe : recipe) : [newRecipe, ...recipes];
-    setRecipes(all); storage.saveRecipes(all); setExpandedRecipeId(newRecipe.id);
+    setRecipes(all); storage.saveRecipes(all); storage.logAction('FICHA TÉCNICA', `${editingRecipe ? 'Ficha atualizada' : 'Ficha criada'}: ${newRecipe.name}`); setExpandedRecipeId(newRecipe.id);
     setIsAddModalOpen(false); setEditingRecipe(null);
   };
 
@@ -396,7 +397,7 @@ export const RecipesModule: React.FC = () => {
 
                 <div className="space-y-2">
                   {ingredients.map((ing, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
+                    <div key={idx} className="flex flex-wrap items-center gap-2">
                       <input
                         type="text"
                         placeholder="Nome do ingrediente"
@@ -404,6 +405,7 @@ export const RecipesModule: React.FC = () => {
                         onChange={(e) => handleUpdateIngredient(idx, 'name', e.target.value)}
                         className="flex-2 px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs"
                       />
+                      <select aria-label="Vincular ingrediente ao estoque" value={ing.stockProductId || ""} onChange={(e) => handleUpdateIngredient(idx, 'stockProductId' as keyof Ingredient, e.target.value)} className="max-w-36 px-2 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs"><option value="">Sem vínculo de estoque</option>{stockProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
                       <input
                         type="number"
                         step="0.01"

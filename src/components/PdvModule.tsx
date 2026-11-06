@@ -47,6 +47,8 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('DINHEIRO');
   const [amountPaid, setAmountPaid] = useState<number>(0);
+  const [mixedPayments, setMixedPayments] = useState({ DINHEIRO: 0, PIX: 0, CARTAO_DEBITO: 0, CARTAO_CREDITO: 0 });
+  const mixedTotal = Object.values(mixedPayments).reduce((sum, value) => sum + value, 0);
   const [customerName, setCustomerName] = useState('');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
@@ -63,7 +65,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   const openCashRegister = (event: React.FormEvent) => {
     event.preventDefault();
     if (!cashOperator.trim() || openingAmount < 0) return;
-    const opened: CashRegister = { id: 'cx_' + Date.now(), status: 'OPEN', operatorName: cashOperator.trim(), openedAt: Date.now(), initialAmount: Number(openingAmount), movements: [], salesCount: 0, salesTotal: 0, salesByMethod: { DINHEIRO: 0, PIX: 0, CARTAO_DEBITO: 0, CARTAO_CREDITO: 0, FIADO: 0 }, expectedCashAmount: Number(openingAmount) };
+    const opened: CashRegister = { id: 'cx_' + Date.now(), status: 'OPEN', operatorName: cashOperator.trim(), openedAt: Date.now(), initialAmount: Number(openingAmount), movements: [], salesCount: 0, salesTotal: 0, salesByMethod: { DINHEIRO: 0, PIX: 0, CARTAO_DEBITO: 0, CARTAO_CREDITO: 0, FIADO: 0, MISTO: 0 }, expectedCashAmount: Number(openingAmount) };
     storage.saveCashRegister(opened); setCashRegister(opened); setCashModal(null);
   };
 
@@ -210,7 +212,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   // Finalizar Venda
   const handleFinalizeSale = () => {
     if (!isCashOpen) { setIsCheckoutOpen(false); setCashModal('open'); return; }
-    if (paymentMethod === 'DINHEIRO' && amountPaid < total) {
+    if ((paymentMethod === 'DINHEIRO' && amountPaid < total) || (paymentMethod === 'MISTO' && Math.abs(mixedTotal-total) > 0.009)) {
       sound.playAlert();
       return;
     }
@@ -235,6 +237,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
         discount,
         total,
         paymentMethod,
+        paymentBreakdown: paymentMethod === 'MISTO' ? mixedPayments : undefined,
         amountPaid: paymentMethod === 'DINHEIRO' ? amountPaid : total,
         changeAmount: changeDue,
         customerName: customerName.trim() || undefined,
@@ -674,6 +677,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                 { id: 'PIX', label: 'PIX', icon: QrCode },
                 { id: 'CARTAO_DEBITO', label: 'Débito', icon: CreditCard },
                 { id: 'CARTAO_CREDITO', label: 'Crédito', icon: CreditCard },
+                { id: 'MISTO', label: 'Dividido', icon: Plus },
               ].map((method) => {
                 const Icon = method.icon;
                 const isSelected = paymentMethod === method.id;
@@ -700,6 +704,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
             </div>
 
             {/* Conteúdo Específico do Meio de Pagamento */}
+            {paymentMethod === 'MISTO' && <div className="space-y-2 p-4 bg-neutral-50 dark:bg-neutral-800/40 rounded-xl mb-4"><p className="text-xs font-semibold">Informe quanto será pago em cada forma. A soma precisa fechar o total.</p>{(['DINHEIRO','PIX','CARTAO_DEBITO','CARTAO_CREDITO'] as const).map((method)=><label key={method} className="flex items-center justify-between gap-3 text-xs">{method.replace('CARTAO_','Cartão ').replace('_',' ')}<input type="number" min="0" step="0.01" value={mixedPayments[method]||''} onChange={e=>setMixedPayments({...mixedPayments,[method]:Number(e.target.value)})} className="w-32 rounded border p-2 dark:bg-neutral-900"/></label>)}<p className={"text-right font-bold "+(Math.abs(mixedTotal-total)<0.009?'text-emerald-600':'text-red-600')}>Alocado: R$ {mixedTotal.toFixed(2).replace('.',',')} / {total.toFixed(2).replace('.',',')}</p></div>}
             {paymentMethod === 'DINHEIRO' && (
               <div className="space-y-3 p-4 bg-neutral-50 dark:bg-neutral-800/40 rounded-xl border border-neutral-200 dark:border-neutral-700/60 mb-4">
                 <div className="flex justify-between items-center">
@@ -761,11 +766,11 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                   Escaneie o QR Code no app do banco
                 </span>
                 <p className="text-[11px] text-neutral-400 mt-0.5">
-                  Chave Banco Central: padaria.master@pix.bcb.gov.br
+                  QR demonstrativo — configure uma chave Pix válida antes de usar.
                 </p>
                 <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Aguardando webhook bancário instantâneo...</span>
+                  <span>Confirme o recebimento no aplicativo do banco.</span>
                 </div>
               </div>
             )}
@@ -777,7 +782,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                   Aproxime ou insira o cartão na máquina POS
                 </span>
                 <p className="text-[11px] text-neutral-400 mt-1">
-                  Integração Stone / Cielo / Rede pronta
+                  Confirme o pagamento diretamente na maquininha; integração automática não está ativa.
                 </p>
               </div>
             )}
@@ -806,7 +811,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
               </button>
               <button
                 onClick={handleFinalizeSale}
-                disabled={isProcessingPayment || (paymentMethod === 'DINHEIRO' && amountPaid < total)}
+                disabled={isProcessingPayment || (paymentMethod === 'DINHEIRO' && amountPaid < total) || (paymentMethod === 'MISTO' && Math.abs(mixedTotal-total) > 0.009)}
                 className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
               >
                 {isProcessingPayment ? (
@@ -880,6 +885,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                   <span>FORMA DE PGTO:</span>
                   <span>{completedSale.paymentMethod}</span>
                 </div>
+                {completedSale.paymentMethod === 'MISTO' && completedSale.paymentBreakdown && <div className="border-t border-dashed border-neutral-300 dark:border-neutral-700 pt-2 space-y-1 text-xs">{Object.entries(completedSale.paymentBreakdown).filter(([,value])=>Number(value)>0).map(([method,value])=><div key={method} className="flex justify-between"><span>{method.replace('CARTAO_','Cartão ').replace('_',' ')}</span><span>R$ {Number(value).toFixed(2).replace('.',',')}</span></div>)}</div>}
                 {completedSale.paymentMethod === 'DINHEIRO' && (
                   <>
                     <div className="flex justify-between text-[10px]">

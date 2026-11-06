@@ -9,7 +9,7 @@ import {
   CashRegister, 
   FinancialTransaction, 
   BakeryOrder, 
-  SyncState 
+  SyncState, ProductionBatch, Supplier, AuditEntry, PurchaseEntry, VoiceNote
 } from '../types/padaria';
 
 const STORAGE_KEYS = {
@@ -21,6 +21,11 @@ const STORAGE_KEYS = {
   ORDERS: 'padaria_master_orders_v2',
   SYNC: 'padaria_master_sync_v2',
   MANAGER_PIN: 'padaria_master_manager_pin_v1',
+  PRODUCTIONS: 'padaria_master_productions_v1',
+  SUPPLIERS: 'padaria_master_suppliers_v1',
+  AUDIT: 'padaria_master_audit_v1',
+  PURCHASES: 'padaria_master_purchases_v1',
+  VOICE_NOTES: 'padaria_master_voice_notes_v1',
 };
 
 export const INITIAL_PRODUCTS: Product[] = [
@@ -365,7 +370,8 @@ export const INITIAL_CASH_REGISTER: CashRegister = {
     PIX: 180.00,
     CARTAO_DEBITO: 92.00,
     CARTAO_CREDITO: 69.00,
-    FIADO: 0.00
+    FIADO: 0.00,
+    MISTO: 0.00
   },
   expectedCashAmount: 150.00 + 50.00 + 145.50, // 345.50
 };
@@ -410,6 +416,34 @@ export const INITIAL_FINANCES: FinancialTransaction[] = [
 ];
 
 class StorageService {
+  getVoiceNotes(): VoiceNote[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.VOICE_NOTES) || '[]'); } catch { return []; } }
+  saveVoiceNotes(rows: VoiceNote[]): void { localStorage.setItem(STORAGE_KEYS.VOICE_NOTES, JSON.stringify(rows)); }
+  getProductions(): ProductionBatch[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.PRODUCTIONS) || '[]'); } catch { return []; } }
+  saveProductions(rows: ProductionBatch[]): void { localStorage.setItem(STORAGE_KEYS.PRODUCTIONS, JSON.stringify(rows)); }
+  getSuppliers(): Supplier[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.SUPPLIERS) || '[]'); } catch { return []; } }
+  saveSuppliers(rows: Supplier[]): void { localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(rows)); }
+  getPurchases(): PurchaseEntry[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.PURCHASES) || '[]'); } catch { return []; } }
+  savePurchases(rows: PurchaseEntry[]): void { localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(rows)); }
+  getAudit(): AuditEntry[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT) || '[]'); } catch { return []; } }
+  logAction(action: string, detail: string, operator = 'Gerente'): void { const rows=this.getAudit(); rows.unshift({id:'aud_'+Date.now(), action, detail, operator, timestamp:Date.now()}); localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(rows.slice(0,1000))); }
+  produce(batch: ProductionBatch, recipe: Recipe): {ok:boolean; error?:string} {
+    const products=this.getProducts();
+    const linked = recipe.ingredients.filter(ing => ing.stockProductId).map(ing => {
+      const product = products.find(item => item.id === ing.stockProductId);
+      if (!product) return { ing, product, amount: 0 };
+      let amount = ing.quantity * batch.quantity / recipe.yieldUnits;
+      if (product.unit === 'KG' && ing.unit === 'g') amount *= 0.001;
+      else if (!((product.unit === 'KG' && ing.unit === 'kg') || (product.unit === 'UN' && ing.unit === 'un') || (product.unit === 'PCT' && ing.unit === 'un'))) return { ing, product: undefined, amount: 0 };
+      return { ing, product, amount };
+    });
+    for (const row of linked) {
+      if (!row.product) return {ok:false,error:'Produto de estoque ausente ou unidade incompatível para '+row.ing.name};
+      if (row.product.stockQuantity < row.amount) return {ok:false,error:'Estoque insuficiente para '+row.ing.name};
+    }
+    for (const row of linked) row.product!.stockQuantity -= row.amount;
+    const out=products.find(x=>x.id===batch.productId); if(!out) return {ok:false,error:'Produto produzido não encontrado no estoque.'}; out.stockQuantity += batch.quantity;
+    this.saveProducts(products); this.saveProductions([batch,...this.getProductions()]); this.logAction('PRODUÇÃO', batch.recipeName+' · '+batch.quantity+' un',batch.operator); return {ok:true};
+  }
   getProducts(): Product[] {
     const raw = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     if (!raw) {
@@ -506,17 +540,18 @@ class StorageService {
     if (cash?.id === sale.cashRegisterId) {
       cash.salesCount = Math.max(0, cash.salesCount - 1);
       cash.salesTotal = Math.max(0, cash.salesTotal - sale.total);
-      cash.salesByMethod[sale.paymentMethod] = Math.max(
-        0,
-        (cash.salesByMethod[sale.paymentMethod] || 0) - sale.total
-      );
-      if (sale.paymentMethod === 'DINHEIRO') {
-        cash.expectedCashAmount = Math.max(0, cash.expectedCashAmount - sale.total);
+      if (sale.paymentMethod !== 'MISTO') cash.salesByMethod[sale.paymentMethod] = Math.max(0, (cash.salesByMethod[sale.paymentMethod] || 0) - sale.total);
+      if (sale.paymentMethod === 'DINHEIRO') cash.expectedCashAmount = Math.max(0, cash.expectedCashAmount - sale.total);
+      if (sale.paymentMethod === 'MISTO' && sale.paymentBreakdown) for (const [method, amount] of Object.entries(sale.paymentBreakdown)) {
+        const key = method as keyof typeof cash.salesByMethod;
+        cash.salesByMethod[key] = Math.max(0, (cash.salesByMethod[key] || 0) - (amount || 0));
+        if (method === 'DINHEIRO') cash.expectedCashAmount = Math.max(0, cash.expectedCashAmount - (amount || 0));
       }
       this.saveCashRegister(cash);
     }
 
     this.saveFinances(this.getFinances().filter((transaction) => transaction.id !== 'tx_' + sale.id));
+    this.logAction('CANCELAMENTO', `Venda #${sale.code}: ${reason.trim()}`, cancelledSale.cancelledBy || 'Gerente');
     this.addSyncLog('CANCEL', 'SALE_' + sale.code);
     return { ok: true };
   }
@@ -542,9 +577,13 @@ class StorageService {
     if (cash && cash.status === 'OPEN') {
       cash.salesCount += 1;
       cash.salesTotal += sale.total;
-      cash.salesByMethod[sale.paymentMethod] = (cash.salesByMethod[sale.paymentMethod] || 0) + sale.total;
-      if (sale.paymentMethod === 'DINHEIRO') {
-        cash.expectedCashAmount += sale.total;
+      if (sale.paymentMethod !== 'MISTO') cash.salesByMethod[sale.paymentMethod] = (cash.salesByMethod[sale.paymentMethod] || 0) + sale.total;
+      if (sale.paymentMethod === 'DINHEIRO') cash.expectedCashAmount += sale.total;
+      if (sale.paymentMethod === 'MISTO' && sale.paymentBreakdown) {
+        for (const [method, amount] of Object.entries(sale.paymentBreakdown)) {
+          cash.salesByMethod[method as keyof typeof cash.salesByMethod] = (cash.salesByMethod[method as keyof typeof cash.salesByMethod] || 0) + (amount || 0);
+          if (method === 'DINHEIRO') cash.expectedCashAmount += amount || 0;
+        }
       }
       this.saveCashRegister(cash);
     }
@@ -560,6 +599,7 @@ class StorageService {
       paymentMethod: sale.paymentMethod
     });
 
+    this.logAction('VENDA', `Venda #${sale.code} · ${sale.paymentMethod}`, 'Operador do caixa');
     this.addSyncLog('INSERT', `SALE_${sale.code}`);
   }
 
@@ -594,7 +634,9 @@ class StorageService {
   }
 
   saveCashRegister(cash: CashRegister): void {
+    const hadRegister = Boolean(localStorage.getItem(STORAGE_KEYS.CASH_REGISTER));
     localStorage.setItem(STORAGE_KEYS.CASH_REGISTER, JSON.stringify(cash));
+    if (hadRegister) this.logAction('CAIXA', `${cash.status === 'OPEN' ? 'Abertura/atualização' : 'Fechamento'} · ${cash.operatorName}`, cash.operatorName);
   }
 
   getFinances(): FinancialTransaction[] {
@@ -696,6 +738,11 @@ class StorageService {
       cashRegister: this.getCashRegister(),
       finances: this.getFinances(),
       orders: this.getOrders(),
+      productions: this.getProductions(),
+      suppliers: this.getSuppliers(),
+      audit: this.getAudit(),
+      purchases: this.getPurchases(),
+      voiceNotes: this.getVoiceNotes(),
     };
     return JSON.stringify(backup, null, 2);
   }
@@ -709,6 +756,11 @@ class StorageService {
       if (data.cashRegister) this.saveCashRegister(data.cashRegister);
       if (data.finances) this.saveFinances(data.finances);
       if (data.orders) this.saveOrders(data.orders);
+      if (data.productions) this.saveProductions(data.productions);
+      if (data.suppliers) this.saveSuppliers(data.suppliers);
+      if (data.audit) localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(data.audit));
+      if (data.purchases) this.savePurchases(data.purchases);
+      if (data.voiceNotes) this.saveVoiceNotes(data.voiceNotes);
       return true;
     } catch {
       return false;
