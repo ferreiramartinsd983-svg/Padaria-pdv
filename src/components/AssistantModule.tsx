@@ -32,6 +32,8 @@ export const AssistantModule: React.FC<{ onProductsUpdated: () => void; onSaleCo
   const [isListening, setIsListening] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [error, setError] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState('');
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('DINHEIRO');
   const recognitionRef = useRef<RecognitionLike | null>(null);
 
@@ -58,6 +60,24 @@ export const AssistantModule: React.FC<{ onProductsUpdated: () => void; onSaleCo
     try { recognition.start(); setIsListening(true); } catch { setError('Não consegui iniciar o microfone. Tente novamente.'); }
   };
 
+  const testConnection = async () => {
+    const base = endpoint.trim().replace(/\/$/, '');
+    if (!base) { setError('Informe primeiro o endereço do serviço de IA.'); setShowSettings(true); return; }
+    setError(''); setConnectionStatus(''); setIsTestingConnection(true);
+    try {
+      const response = await fetch(`${base}/api/health`);
+      let result: { ready?: boolean; error?: string } = {};
+      let receivedJson = false;
+      try { result = await response.json(); receivedJson = true; } catch { /* Render pode devolver HTML enquanto inicia. */ }
+      if (result.ready) setConnectionStatus('Servidor acessível e chave Gemini configurada.');
+      else if (response.status === 503 && receivedJson) setError(result.error || 'GEMINI_API_KEY não está configurada nas variáveis do Render.');
+      else if (response.status === 503) setError('O Render ainda está iniciando ou indisponível. Aguarde alguns segundos e teste de novo.');
+      else setError(result.error || `Não consegui validar o serviço (HTTP ${response.status}).`);
+    } catch {
+      setError('Não consegui alcançar o servidor. Confira a URL e se o serviço Render está ativo.');
+    } finally { setIsTestingConnection(false); }
+  };
+
   const askAssistant = async (event?: React.FormEvent) => {
     event?.preventDefault();
     const text = command.trim();
@@ -70,8 +90,13 @@ export const AssistantModule: React.FC<{ onProductsUpdated: () => void; onSaleCo
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: text, products: storage.getProducts().filter(p => !p.isArchived), recipes: storage.getRecipes() }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || `O serviço respondeu com erro (${response.status}).`);
+      let result: Record<string, unknown> = {};
+      try { result = await response.json(); } catch { /* Render pode retornar HTML ao serviço indisponível. */ }
+      if (!response.ok) {
+        const serverMessage = typeof result.error === 'string' ? result.error : '';
+        if (response.status === 503 && !serverMessage) throw new Error('Servidor do assistente indisponível (HTTP 503). Confira se o Render está ativo e tente novamente em alguns segundos.');
+        throw new Error(serverMessage || `O serviço respondeu com erro HTTP ${response.status}. Abra as configurações e teste a conexão.`);
+      }
       const interpreted = result as AssistantResult;
       addMessage('assistant', interpreted.response || 'Entendi.');
       setProducts(storage.getProducts());
@@ -90,7 +115,9 @@ export const AssistantModule: React.FC<{ onProductsUpdated: () => void; onSaleCo
         setPending({ kind: 'recipe', recipe: interpreted.recipe });
       } else if (interpreted.action === 'note') addMessage('assistant', 'Não consegui preparar o texto da anotação. Pode repetir?');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Não consegui falar com o assistente. Verifique a conexão e tente novamente.');
+      const message = caught instanceof Error ? caught.message : 'Não consegui falar com o assistente. Verifique a conexão e tente novamente.';
+      setError(message);
+      if (/503|temporariamente indisponível|GEMINI_API_KEY/i.test(message)) setShowSettings(true);
     } finally { setIsThinking(false); }
   };
 
@@ -144,7 +171,7 @@ export const AssistantModule: React.FC<{ onProductsUpdated: () => void; onSaleCo
   const cancelPending = () => { setPending(null); setError(''); };
   return <div className="mx-auto w-full max-w-4xl space-y-5">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 text-xl font-extrabold"><Bot className="h-6 w-6 text-amber-500"/>Assistente da padaria</h2><p className="mt-1 text-sm text-neutral-500">Fale naturalmente para anotar, vender, ajustar estoque, criar fichas ou tirar dúvidas.</p></div><button onClick={()=>setShowSettings(value=>!value)} aria-label="Configurações do assistente" className="rounded-lg border p-2 dark:border-neutral-700"><Settings2 className="h-4 w-4"/></button></header>
-    {showSettings&&<section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"><label className="block text-sm font-semibold">Endereço seguro do serviço de IA<input value={endpoint} onChange={event=>setEndpoint(event.target.value)} placeholder="https://seu-servico.run.app" className="mt-1 w-full rounded-lg border bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-800"/></label><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="max-w-xl text-xs text-neutral-500">Use a URL do app hospedado com o endpoint /api/assistant. No navegador local, use a origem atual. Nunca cole a chave Gemini aqui.</p><button onClick={()=>{const cleaned=endpoint.trim().replace(/\/$/,'');if(cleaned){try{const url=new URL(cleaned);if(url.protocol!=='https:'&&url.hostname!=='localhost'&&url.hostname!=='127.0.0.1'){setError('Use uma URL HTTPS para proteger a conexão com o serviço.');return;}localStorage.setItem(ENDPOINT_KEY,cleaned);}catch{setError('Informe uma URL válida para o serviço de IA.');return;}}else localStorage.removeItem(ENDPOINT_KEY);setEndpoint(cleaned);setShowSettings(false);setError('');}} className="rounded-lg bg-neutral-900 px-3 py-2 text-sm font-bold text-white dark:bg-neutral-100 dark:text-neutral-900">Salvar endereço</button></div></section>}
+    {showSettings&&<section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"><label className="block text-sm font-semibold">Endereço seguro do serviço de IA<input value={endpoint} onChange={event=>{setEndpoint(event.target.value);setConnectionStatus('');}} placeholder="https://seu-servico.onrender.com" className="mt-1 w-full rounded-lg border bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-800"/></label><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="max-w-xl text-xs text-neutral-500">Informe a URL base do Render, sem /api/assistant. A chave Gemini fica somente nas variáveis do servidor; nunca cole aqui.</p><div className="flex gap-2"><button onClick={()=>void testConnection()} disabled={isTestingConnection} className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50">{isTestingConnection?'Testando…':'Testar conexão'}</button><button onClick={()=>{const cleaned=endpoint.trim().replace(/\/$/,'');if(cleaned){try{const url=new URL(cleaned);if(url.protocol!=='https:'&&url.hostname!=='localhost'&&url.hostname!=='127.0.0.1'){setError('Use uma URL HTTPS para proteger a conexão com o serviço.');return;}localStorage.setItem(ENDPOINT_KEY,cleaned);}catch{setError('Informe uma URL válida para o serviço de IA.');return;}}else localStorage.removeItem(ENDPOINT_KEY);setEndpoint(cleaned);setShowSettings(false);setError('');}}>Salvar endereço</button></div></div>{connectionStatus&&<p role="status" className="mt-2 text-sm font-semibold text-emerald-700">{connectionStatus}</p>}</section>}
     <section className="min-h-56 space-y-3 rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">{!messages.length&&<div className="flex min-h-48 flex-col items-center justify-center text-center"><Sparkles className="mb-3 h-8 w-8 text-amber-500"/><p className="font-bold">Como posso ajudar sua padaria?</p><p className="mt-1 max-w-lg text-sm text-neutral-500">Exemplos: “Anote que a encomenda da Ana é para sábado”, “venda 2 cafés no Pix”, “deu perda de 3 coxinhas, motivo: queimaram”, “me ajuda a montar uma ficha de pão de queijo” ou “quais produtos estão acabando?”.</p></div>}{messages.map(message=><div key={message.id} className={`flex ${message.role==='user'?'justify-end':'justify-start'}`}><div className={`max-w-[90%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm ${message.role==='user'?'bg-amber-500 text-white':'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100'}`}>{message.text}</div></div>)}{isThinking&&<p className="text-sm text-neutral-500">Pensando…</p>}</section>
     {pending&&<section className="space-y-3 rounded-2xl border-2 border-amber-400 bg-amber-50/70 p-4 dark:bg-amber-950/20"><div className="flex items-start justify-between gap-2"><div><h3 className="font-bold">Confira antes de confirmar</h3><p className="text-xs text-neutral-600 dark:text-neutral-400">O assistente só preparou a ação; nada foi gravado ainda.</p></div><button onClick={cancelPending} aria-label="Cancelar ação" className="rounded p-1"><X className="h-4 w-4"/></button></div>
       {pending.kind==='note'&&<div className="rounded-xl bg-white p-3 dark:bg-neutral-900"><strong className="block text-sm">{pending.note.title}</strong><p className="mt-1 whitespace-pre-wrap text-sm">{pending.note.text}</p></div>}

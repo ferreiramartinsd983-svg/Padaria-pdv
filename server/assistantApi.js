@@ -69,11 +69,21 @@ export async function handleAssistantRequest(req, res) {
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    const result = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: { responseMimeType: 'application/json', responseSchema, maxOutputTokens: 1800 },
-    });
+    let result;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        result = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: { responseMimeType: 'application/json', responseSchema, maxOutputTokens: 1800 },
+        });
+        break;
+      } catch (providerError) {
+        const status = Number(providerError?.status || providerError?.code || 0);
+        if (status !== 503 || attempt === 2) throw providerError;
+        await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+      }
+    }
     const text = result.text;
     if (!text) return res.status(502).json({ error: 'O assistente não retornou uma resposta.' });
     const parsed = JSON.parse(text);
@@ -87,6 +97,7 @@ export async function handleAssistantRequest(req, res) {
     if (providerStatus === 400) return res.status(502).json({ error: 'O Google recusou o formato da solicitação. A configuração da IA foi atualizada; aguarde o novo deploy e tente novamente.' });
     if (providerStatus === 401 || providerStatus === 403) return res.status(502).json({ error: 'O Google recusou a chave Gemini. Confira GEMINI_API_KEY nas variáveis do Render.' });
     if (providerStatus === 404) return res.status(502).json({ error: 'O modelo Gemini configurado não foi encontrado ou não está disponível para esta chave.' });
+    if (providerStatus === 503) return res.status(503).json({ error: 'O Gemini está temporariamente indisponível mesmo após novas tentativas. Aguarde alguns segundos e tente novamente.' });
     if (providerStatus === 429) return res.status(502).json({ error: 'O limite de uso da Gemini API foi atingido. Confira sua cota e tente mais tarde.' });
     return res.status(502).json({ error: 'O serviço Gemini falhou. Confira os registros do Render para ver o detalhe e tente novamente.' });
   }

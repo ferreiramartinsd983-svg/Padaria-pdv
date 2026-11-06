@@ -26,7 +26,7 @@ app.use('/api', (req, res, next) => {
   if (origin) {
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Vary', 'Origin');
-    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type');
   }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -40,7 +40,10 @@ app.use('/api', (req, res, next) => {
 });
 app.use(express.json({ limit: '48kb' }));
 app.post('/api/assistant', handleAssistantRequest);
-app.get('/api/health', (_req, res) => res.json({ ready: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) }));
+app.get('/api/health', (_req, res) => {
+  const ready = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+  res.status(ready ? 200 : 503).json({ ready, error: ready ? undefined : 'GEMINI_API_KEY não está configurada nas variáveis do serviço.' });
+});
 
 if (!apiOnly) {
   const dist = path.join(dirname, 'dist');

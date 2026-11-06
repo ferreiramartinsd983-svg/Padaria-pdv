@@ -34,5 +34,6 @@ O assistente pode preparar anotações, vendas, ajustes de estoque e fichas téc
 1. Gere o frontend com `npm run build` e rode o serviço Node com `npm start`.
 2. Configure `GEMINI_API_KEY` como segredo do serviço e, para o APK, permita a origem `https://appassets.androidplatform.net` em `ASSISTANT_ALLOWED_ORIGINS`.
 3. Na aba **Assistente IA** do APK, informe a URL HTTPS do serviço hospedado. A chave da API fica somente no servidor.
+4. Para conferir se o servidor está ativo, abra `https://SEU-SERVICO.onrender.com/api/health`. `{"ready":true}` indica que a variável está definida; se responder 503 com erro JSON, configure `GEMINI_API_KEY` no Render. Um 503 em HTML pode indicar serviço suspenso ou ainda iniciando.
 
 A interpretação por IA requer internet. O reconhecimento do microfone depende do navegador e pode processar o áudio por um serviço externo.
