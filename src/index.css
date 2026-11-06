@@ -5,6 +5,73 @@
 @theme {
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+
+  /* Paleta premium de creme, cacau e caramelo */
+  --color-neutral-50: #fffdf9;
+  --color-neutral-100: #f7f3ec;
+  --color-neutral-200: #e9e0d5;
+  --color-neutral-300: #d8cbbc;
+  --color-neutral-400: #a99b8c;
+  --color-neutral-500: #796c5e;
+  --color-neutral-600: #615448;
+  --color-neutral-700: #4b4035;
+  --color-neutral-800: #3a3027;
+  --color-neutral-900: #2b241d;
+  --color-neutral-950: #17130f;
+  --color-amber-50: #fff6e9;
+  --color-amber-100: #f8e8cd;
+  --color-amber-200: #efd09f;
+  --color-amber-300: #e4b66e;
+  --color-amber-400: #d99748;
+  --color-amber-500: #c87936;
+  --color-amber-600: #ab612c;
+  --color-amber-700: #884a26;
+  --color-amber-800: #69391f;
+  --color-amber-900: #4a2919;
+  --color-amber-950: #2e1a10;
+}
+
+
+[data-palette="oceano"] {
+  --color-amber-50: #eff6ff;
+  --color-amber-100: #dbeafe;
+  --color-amber-200: #bfdbfe;
+  --color-amber-300: #93c5fd;
+  --color-amber-400: #60a5fa;
+  --color-amber-500: #2563eb;
+  --color-amber-600: #1d4ed8;
+  --color-amber-700: #1e40af;
+  --color-amber-800: #1e3a8a;
+  --color-amber-900: #172554;
+  --color-amber-950: #0b142d;
+}
+
+[data-palette="floresta"] {
+  --color-amber-50: #f0fdf4;
+  --color-amber-100: #dcfce7;
+  --color-amber-200: #bbf7d0;
+  --color-amber-300: #86efac;
+  --color-amber-400: #4ade80;
+  --color-amber-500: #27845a;
+  --color-amber-600: #21734e;
+  --color-amber-700: #166534;
+  --color-amber-800: #14532d;
+  --color-amber-900: #103f24;
+  --color-amber-950: #092a18;
+}
+
+[data-palette="ameixa"] {
+  --color-amber-50: #faf5ff;
+  --color-amber-100: #f3e8ff;
+  --color-amber-200: #e9d5ff;
+  --color-amber-300: #d8b4fe;
+  --color-amber-400: #c084fc;
+  --color-amber-500: #9333ea;
+  --color-amber-600: #7e22ce;
+  --color-amber-700: #6b21a8;
+  --color-amber-800: #581c87;
+  --color-amber-900: #3b0764;
+  --color-amber-950: #260543;
 }
 
 /* Custom thermal receipt print styling */
@@ -27,6 +94,17 @@
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 11px !important;
   }
+}
+
+/* Interações com acabamento consistente e foco acessível */
+:focus-visible {
+  outline: 3px solid var(--color-amber-400);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--color-amber-200);
+  color: #2b241d;
 }
 
 /* Smooth transitions */

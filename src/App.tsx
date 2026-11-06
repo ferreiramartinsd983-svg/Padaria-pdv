@@ -100,7 +100,7 @@ export default function App() {
         {viewMode === 'tablet' && (
           <div className="w-full max-w-[1024px] bg-white dark:bg-neutral-900 border-8 border-neutral-800 dark:border-neutral-700 rounded-3xl p-4 shadow-2xl overflow-hidden min-h-[640px]">
             <div className="flex items-center justify-between pb-2 mb-3 border-b border-neutral-200 dark:border-neutral-800 text-[11px] text-neutral-400">
-              <span className="font-bold">Tablet POS Padaria Master 2.2 (10.1" Touch)</span>
+              <span className="font-bold">Tablet POS Padaria Master 2.3 (10.1" Touch)</span>
               <span>1280 x 800 · Android 15</span>
             </div>
             {currentTab === 'pdv' && (
@@ -156,7 +156,7 @@ export default function App() {
 
       {/* Footer simples e profissional */}
       <footer className="py-4 border-t border-neutral-200 dark:border-neutral-800 text-center text-xs text-neutral-400 bg-white/50 dark:bg-neutral-900/50">
-        <p>Padaria Master 2.2 · Gestão da padaria neste dispositivo</p>
+        <p>Padaria Master 2.3 · Gestão da padaria neste dispositivo</p>
       </footer>
     </div>
   );
