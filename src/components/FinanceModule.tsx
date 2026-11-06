@@ -12,7 +12,8 @@ import {
   Users, 
   PackageCheck,
   CheckCircle,
-  X
+  X,
+  PieChart
 } from 'lucide-react';
 import { FinancialTransaction } from '../types/padaria';
 import { storage } from '../services/storage';
@@ -28,24 +29,37 @@ export const FinanceModule: React.FC = () => {
   const [expAmount, setExpAmount] = useState<number>(150);
   const [expPayment, setExpPayment] = useState('PIX');
 
-  // Cálculos do DRE
-  const totalIncomes = finances
+  const periodStart = (() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    if (period === 'SEMANA') {
+      const daysSinceMonday = (start.getDay() + 6) % 7;
+      start.setDate(start.getDate() - daysSinceMonday);
+    } else if (period === 'MES') {
+      start.setDate(1);
+    }
+    return start.getTime();
+  })();
+  const periodFinances = finances.filter(tx => tx.timestamp >= periodStart);
+
+  // Cálculos do DRE no período selecionado
+  const totalIncomes = periodFinances
     .filter((t) => t.type === 'RECEITA')
     .reduce((acc, t) => acc + t.amount, 0);
 
-  const rawMaterialsExpense = finances
+  const rawMaterialsExpense = periodFinances
     .filter((t) => t.type === 'DESPESA' && t.category === 'MATERIA_PRIMA')
     .reduce((acc, t) => acc + t.amount, 0);
 
-  const gasExpense = finances
+  const gasExpense = periodFinances
     .filter((t) => t.type === 'DESPESA' && t.category === 'GAS_FORNO')
     .reduce((acc, t) => acc + t.amount, 0);
 
-  const electricityExpense = finances
+  const electricityExpense = periodFinances
     .filter((t) => t.type === 'DESPESA' && t.category === 'ENERGIA_ELETRICA')
     .reduce((acc, t) => acc + t.amount, 0);
 
-  const otherOperatingExpenses = finances
+  const otherOperatingExpenses = periodFinances
     .filter((t) => t.type === 'DESPESA' && !['MATERIA_PRIMA', 'GAS_FORNO', 'ENERGIA_ELETRICA'].includes(t.category))
     .reduce((acc, t) => acc + t.amount, 0);
 
@@ -55,6 +69,8 @@ export const FinanceModule: React.FC = () => {
   const grossProfit = totalIncomes - rawMaterialsExpense;
   // Lucro Líquido Final
   const netProfit = totalIncomes - totalExpenses;
+  const totalFlow = totalIncomes + totalExpenses;
+  const incomeSharePercent = totalFlow > 0 ? (totalIncomes / totalFlow) * 100 : 0;
   const netMarginPercent = totalIncomes > 0 ? (netProfit / totalIncomes) * 100 : 0;
 
   const handleCreateExpense = (e: React.FormEvent) => {
@@ -116,6 +132,23 @@ export const FinanceModule: React.FC = () => {
           <span className="text-[11px] font-sans text-neutral-400 mt-0.5 block">Alvo recomendado: 22% a 30%</span>
         </div>
       </div>
+
+
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><h3 className="flex items-center gap-2 text-base font-extrabold"><PieChart className="h-5 w-5 text-amber-500"/>Receitas e gastos</h3><p className="mt-1 text-xs text-neutral-500">Veja como as movimentações se dividem no período.</p></div>
+          <div className="flex rounded-xl bg-neutral-100 p-1 dark:bg-neutral-800">{([{id:'HOJE',label:'Hoje'},{id:'SEMANA',label:'Esta semana'},{id:'MES',label:'Este mês'}] as const).map(option=><button key={option.id} onClick={()=>setPeriod(option.id)} className={`rounded-lg px-3 py-2 text-xs font-bold transition-all ${period===option.id?'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white':'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'}`}>{option.label}</button>)}</div>
+        </div>
+        <div className="mt-5 grid items-center gap-6 sm:grid-cols-[auto_1fr]">
+          <div className="mx-auto relative h-44 w-44 rounded-full shadow-inner" role="img" aria-label={`Gráfico de pizza: receitas de R$ ${totalIncomes.toFixed(2)} e gastos de R$ ${totalExpenses.toFixed(2)}`} style={{background: totalFlow > 0 ? `conic-gradient(#059669 0deg ${incomeSharePercent * 3.6}deg, #ef4444 ${incomeSharePercent * 3.6}deg 360deg)` : 'conic-gradient(#d6d3d1 0deg 360deg)'}}>
+            <div className="absolute inset-[22%] flex flex-col items-center justify-center rounded-full bg-white text-center dark:bg-neutral-900"><span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Movimento</span><strong className="mt-1 max-w-full truncate px-2 text-sm font-black text-neutral-900 dark:text-neutral-100">R$ {totalFlow.toFixed(2).replace('.', ',')}</strong><span className="mt-0.5 text-[10px] text-neutral-400">no período</span></div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-4 rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950/30"><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-600"/><span className="text-sm font-semibold">Receitas</span></div><div className="text-right"><p className="font-mono text-sm font-extrabold text-emerald-700 dark:text-emerald-300">R$ {totalIncomes.toFixed(2).replace('.', ',')}</p><p className="text-[11px] text-neutral-500">{incomeSharePercent.toFixed(1)}% do movimento</p></div></div>
+            <div className="flex items-center justify-between gap-4 rounded-xl bg-red-50 p-3 dark:bg-red-950/30"><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500"/><span className="text-sm font-semibold">Gastos</span></div><div className="text-right"><p className="font-mono text-sm font-extrabold text-red-700 dark:text-red-300">R$ {totalExpenses.toFixed(2).replace('.', ',')}</p><p className="text-[11px] text-neutral-500">{(100-incomeSharePercent).toFixed(1)}% do movimento</p></div></div>
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Demonstrativo do Resultado do Exercício (DRE) - 7 colunas */}
@@ -215,7 +248,7 @@ export const FinanceModule: React.FC = () => {
           <p className="text-xs text-neutral-400 mb-4">Fluxo de caixa de entradas e saídas</p>
 
           <div className="flex-1 overflow-y-auto space-y-3 max-h-[420px] pr-1">
-            {finances.map((tx) => {
+            {periodFinances.map((tx) => {
               const isIncome = tx.type === 'RECEITA';
               return (
                 <div

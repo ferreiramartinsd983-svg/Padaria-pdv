@@ -103,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <span className="font-extrabold text-lg tracking-tight text-neutral-900 dark:text-neutral-50 whitespace-nowrap">
-              PADARIA<span className="text-amber-500">MASTER</span> <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400">2.4</span>
+              PADARIA<span className="text-amber-500">MASTER</span> <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400">2.5</span>
             </span>
           </div>
         </div>

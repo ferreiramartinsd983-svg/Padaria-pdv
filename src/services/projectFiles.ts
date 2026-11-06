@@ -139,8 +139,8 @@ android {
         applicationId = "com.padariamaster.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 204
-        versionName = "2.4.0"
+        versionCode = 205
+        versionName = "2.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

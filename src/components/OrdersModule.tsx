@@ -9,7 +9,9 @@ import {
   AlertCircle, 
   Package, 
   ChevronRight,
-  X
+  X,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { BakeryOrder } from '../types/padaria';
 import { storage } from '../services/storage';
@@ -18,6 +20,7 @@ export const OrdersModule: React.FC = () => {
   const [orders, setOrders] = useState<BakeryOrder[]>(() => storage.getOrders());
   const [statusFilter, setStatusFilter] = useState<string>('TODOS');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   // Form para nova encomenda
   const [customerName, setCustomerName] = useState('');
@@ -46,11 +49,49 @@ export const OrdersModule: React.FC = () => {
     storage.logAction('ENCOMENDA', `Status alterado para ${nextStatus} · ${orderId}`, 'Operador');
   };
 
+  const openNewOrder = () => {
+    setEditingOrderId(null);
+    setCustomerName(''); setCustomerPhone('');
+    setDeliveryDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]); setDeliveryTime('16:00');
+    setItemsDesc(''); setTotalAmount(180); setDepositAmount(90); setNotes('');
+    setIsAddModalOpen(true);
+  };
+
+  const openEditOrder = (order: BakeryOrder) => {
+    setEditingOrderId(order.id);
+    setCustomerName(order.customerName); setCustomerPhone(order.customerPhone);
+    setDeliveryDate(order.deliveryDate); setDeliveryTime(order.deliveryTime);
+    setItemsDesc(order.itemsDescription); setTotalAmount(order.totalAmount);
+    setDepositAmount(order.depositAmount); setNotes(order.notes || '');
+    setIsAddModalOpen(true);
+  };
+
+  const handleDeleteOrder = (order: BakeryOrder) => {
+    if (!window.confirm(`Excluir a encomenda de ${order.customerName}? Essa ação não pode ser desfeita.`)) return;
+    const updated = orders.filter(item => item.id !== order.id);
+    setOrders(updated); storage.saveOrders(updated);
+    storage.logAction('ENCOMENDA', `Excluída para ${order.customerName} · ${order.id}`, 'Operador');
+  };
+
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName || !itemsDesc) return;
 
+    if (!Number.isFinite(totalAmount) || !Number.isFinite(depositAmount) || totalAmount < 0 || depositAmount < 0 || depositAmount > totalAmount) {
+      window.alert('Confira os valores: o sinal não pode ser negativo nem maior que o valor total.');
+      return;
+    }
     const remaining = Math.max(0, totalAmount - depositAmount);
+
+    if (editingOrderId) {
+      const original = orders.find(order => order.id === editingOrderId);
+      if (!original) return;
+      const updated = orders.map(order => order.id === editingOrderId ? { ...order, customerName, customerPhone, deliveryDate, deliveryTime, itemsDescription: itemsDesc, totalAmount: Number(totalAmount), depositAmount: Number(depositAmount), remainingAmount: remaining, notes } : order);
+      setOrders(updated); storage.saveOrders(updated);
+      storage.logAction('ENCOMENDA', `Editada para ${customerName} · retirada ${deliveryDate} ${deliveryTime}`, 'Operador');
+      setIsAddModalOpen(false); setEditingOrderId(null);
+      return;
+    }
 
     const newOrder: BakeryOrder = {
       id: 'ord_' + Date.now(),
@@ -113,7 +154,7 @@ export const OrdersModule: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={openNewOrder}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
           >
             <Plus className="w-4 h-4" />
@@ -232,6 +273,10 @@ export const OrdersModule: React.FC = () => {
                   )}
                 </div>
                 {isReady && order.customerPhone && <button onClick={() => { const phone=order.customerPhone.replace(/\D/g,''); const text=encodeURIComponent(`Olá, ${order.customerName}! Sua encomenda está pronta para retirada na Padaria Master.`); window.open(`https://wa.me/${phone}?text=${text}`,'_blank','noopener,noreferrer'); }} className="w-full mt-2 rounded-lg border border-emerald-300 text-emerald-700 py-2 text-xs font-bold">Avisar cliente pelo WhatsApp</button>}
+                <div className="mt-3 flex gap-2 border-t border-neutral-100 pt-3 dark:border-neutral-800">
+                  <button onClick={() => openEditOrder(order)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-bold text-neutral-700 transition-colors hover:border-amber-400 hover:bg-amber-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"><Pencil className="h-3.5 w-3.5"/>Editar</button>
+                  <button onClick={() => handleDeleteOrder(order)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"><Trash2 className="h-3.5 w-3.5"/>Excluir</button>
+                </div>
               </div>
             </div>
           );
@@ -243,7 +288,7 @@ export const OrdersModule: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100 mb-1">
-              Cadastrar Nova Encomenda
+              {editingOrderId ? 'Editar Encomenda' : 'Cadastrar Nova Encomenda'}
             </h3>
             <p className="text-xs text-neutral-400 mb-4">
               Informe os dados do cliente e os detalhes dos produtos sob encomenda
@@ -351,7 +396,7 @@ export const OrdersModule: React.FC = () => {
               <div className="flex items-center gap-3 pt-3">
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
+                  onClick={() => { setIsAddModalOpen(false); setEditingOrderId(null); }}
                   className="flex-1 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 font-semibold"
                 >
                   Cancelar
