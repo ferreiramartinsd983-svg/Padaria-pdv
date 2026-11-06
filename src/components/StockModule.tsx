@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Package, 
   AlertTriangle, 
@@ -11,7 +11,8 @@ import {
   X,
   Edit2,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  Image as ImageIcon
 } from 'lucide-react';
 import { Product, ProductCategory } from '../types/padaria';
 import { storage } from '../services/storage';
@@ -36,6 +37,8 @@ export const StockModule: React.FC<StockModuleProps> = ({
   const [adjustType, setAdjustType] = useState<'ENTRADA' | 'PERDA'>('ENTRADA');
   const [adjustAmount, setAdjustAmount] = useState<number>(10);
   const [adjustReason, setAdjustReason] = useState<string>('Reposição de fornada fresca');
+  const [isSearchingImage, setIsSearchingImage] = useState(false);
+  const [imageSearchMessage, setImageSearchMessage] = useState('');
 
   // Form para novo produto
   const [formData, setFormData] = useState({
@@ -49,8 +52,37 @@ export const StockModule: React.FC<StockModuleProps> = ({
     minStock: 5,
     unit: 'UN' as 'UN' | 'KG' | 'PCT',
     batchNumber: 'LT-' + Math.floor(1000 + Math.random() * 9000),
-    expirationDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]
+    expirationDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
+    imageUrl: ''
   });
+
+  useEffect(() => {
+    const query = formData.name.trim();
+    if (!isAddModalOpen || editingProduct || query.length < 2) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setIsSearchingImage(true);
+      setImageSearchMessage('Procurando uma imagem para “' + query + '”…');
+      try {
+        const response = await fetch('https://api.openverse.org/v1/images/?q=' + encodeURIComponent(query) + '&page_size=1');
+        if (!response.ok) throw new Error('Busca indisponível');
+        const data = await response.json();
+        const imageUrl = data.results?.[0]?.thumbnail || data.results?.[0]?.url;
+        if (!active) return;
+        if (imageUrl) {
+          setFormData((current) => ({ ...current, imageUrl }));
+          setImageSearchMessage('Imagem encontrada automaticamente.');
+        } else {
+          setImageSearchMessage('Nenhuma imagem encontrada para esse nome.');
+        }
+      } catch {
+        if (active) setImageSearchMessage('Não foi possível buscar a imagem. Verifique a conexão.');
+      } finally {
+        if (active) setIsSearchingImage(false);
+      }
+    }, 700);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [formData.name, isAddModalOpen, editingProduct]);
 
   const filteredProducts = products.filter((p) => {
     const matchesArchive = Boolean(p.isArchived) === showArchived;
@@ -71,8 +103,26 @@ export const StockModule: React.FC<StockModuleProps> = ({
       name: '', category: 'PAES', barcode: '', salePrice: 15.00, costPrice: 5.50,
       isWeighed: false, stockQuantity: 20, minStock: 5, unit: 'UN',
       batchNumber: 'LT-' + Math.floor(1000 + Math.random() * 9000),
-      expirationDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]
+      expirationDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
+      imageUrl: ''
     });
+    setImageSearchMessage('');
+  };
+
+  const handleSearchProductImage = async () => {
+    const query = formData.name.trim();
+    if (!query) { setImageSearchMessage('Digite o nome do produto para procurar uma imagem.'); return; }
+    setIsSearchingImage(true); setImageSearchMessage('');
+    try {
+      const response = await fetch('https://api.openverse.org/v1/images/?q=' + encodeURIComponent(query) + '&page_size=1');
+      if (!response.ok) throw new Error('Busca indisponível');
+      const data = await response.json();
+      const imageUrl = data.results?.[0]?.thumbnail || data.results?.[0]?.url;
+      if (!imageUrl) { setImageSearchMessage('Nenhuma imagem encontrada. Tente outro nome.'); return; }
+      setFormData((current) => ({ ...current, imageUrl }));
+      setImageSearchMessage('Imagem encontrada. Você pode salvar o produto.');
+    } catch { setImageSearchMessage('Não foi possível buscar agora. Verifique a conexão e tente novamente.'); }
+    finally { setIsSearchingImage(false); }
   };
 
   const handleSaveProduct = (e: React.FormEvent) => {
@@ -303,7 +353,7 @@ export const StockModule: React.FC<StockModuleProps> = ({
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => { setSelectedProduct(p); setAdjustType('ENTRADA'); setIsAdjustModalOpen(true); }} title="Dar entrada de mercadoria/fornada" className="p-1.5 rounded-md hover:bg-emerald-50 text-emerald-600"><ArrowUpRight className="w-4 h-4" /></button>
                           <button onClick={() => { setSelectedProduct(p); setAdjustType('PERDA'); setIsAdjustModalOpen(true); }} title="Registrar perda de fornada / quebra" className="p-1.5 rounded-md hover:bg-red-50 text-red-500"><ArrowDownRight className="w-4 h-4" /></button>
-                          <button onClick={() => { setEditingProduct(p); setFormData({ name: p.name, category: p.category, barcode: p.barcode, salePrice: p.salePrice, costPrice: p.costPrice, isWeighed: p.isWeighed, stockQuantity: p.stockQuantity, minStock: p.minStock, unit: p.unit, batchNumber: p.batchNumber || '', expirationDate: p.expirationDate || '' }); setIsAddModalOpen(true); }} title="Editar produto" className="p-1.5 rounded-md hover:bg-blue-50 text-blue-600"><Edit2 className="w-4 h-4" /></button>
+                          <button onClick={() => { setEditingProduct(p); setFormData({ name: p.name, category: p.category, barcode: p.barcode, salePrice: p.salePrice, costPrice: p.costPrice, isWeighed: p.isWeighed, stockQuantity: p.stockQuantity, minStock: p.minStock, unit: p.unit, batchNumber: p.batchNumber || '', expirationDate: p.expirationDate || '', imageUrl: p.imageUrl || '' }); setImageSearchMessage(''); setIsAddModalOpen(true); }} title="Editar produto" className="p-1.5 rounded-md hover:bg-blue-50 text-blue-600"><Edit2 className="w-4 h-4" /></button>
                           <button onClick={() => setProductToArchive(p)} title="Remover do estoque" className="p-1.5 rounded-md hover:bg-red-50 text-red-600"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       )}
@@ -339,9 +389,22 @@ export const StockModule: React.FC<StockModuleProps> = ({
                   required
                   placeholder="Ex: Pão de Torresmo Artesanal"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value, imageUrl: '' })}
                   className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs"
                 />
+              </div>
+
+              <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-3 space-y-2">
+                <label className="font-semibold text-neutral-700 dark:text-neutral-300 block">Imagem de capa (opcional)</label>
+                <div className="flex gap-2">
+                  <button type="button" disabled={isSearchingImage} onClick={handleSearchProductImage} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-3 py-2 font-semibold disabled:opacity-60">
+                    <ImageIcon className="h-4 w-4" />{isSearchingImage ? 'Buscando…' : 'Buscar outra imagem'}
+                  </button>
+                  {formData.imageUrl && <button type="button" onClick={() => { setFormData({ ...formData, imageUrl: '' }); setImageSearchMessage('Imagem removida.'); }} className="text-red-600">Remover</button>}
+                </div>
+                {formData.imageUrl && <img src={formData.imageUrl} alt={'Capa de ' + formData.name} className="h-24 w-24 rounded-lg object-cover" />}
+                {imageSearchMessage && <p role="status" className="text-neutral-500">{imageSearchMessage}</p>}
+                <p className="text-neutral-500">Ao digitar o nome no cadastro, o app procura a imagem automaticamente no Openverse.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
