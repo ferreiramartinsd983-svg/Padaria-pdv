@@ -72,7 +72,7 @@ export async function handleAssistantRequest(req, res) {
     const result = await ai.models.generateContent({
       model,
       contents: prompt,
-      config: { responseMimeType: 'application/json', responseSchema, temperature: 0.2, maxOutputTokens: 1800 },
+      config: { responseMimeType: 'application/json', responseSchema, maxOutputTokens: 1800 },
     });
     const text = result.text;
     if (!text) return res.status(502).json({ error: 'O assistente não retornou uma resposta.' });
@@ -82,7 +82,12 @@ export async function handleAssistantRequest(req, res) {
     }
     return res.json(parsed);
   } catch (error) {
-    console.error('Gemini assistant request failed:', error?.message || error);
-    return res.status(502).json({ error: 'Não consegui interpretar o comando agora. Tente novamente.' });
+    const providerStatus = Number(error?.status || error?.code || 0);
+    console.error('Gemini assistant request failed:', providerStatus, error?.message || error);
+    if (providerStatus === 400) return res.status(502).json({ error: 'O Google recusou o formato da solicitação. A configuração da IA foi atualizada; aguarde o novo deploy e tente novamente.' });
+    if (providerStatus === 401 || providerStatus === 403) return res.status(502).json({ error: 'O Google recusou a chave Gemini. Confira GEMINI_API_KEY nas variáveis do Render.' });
+    if (providerStatus === 404) return res.status(502).json({ error: 'O modelo Gemini configurado não foi encontrado ou não está disponível para esta chave.' });
+    if (providerStatus === 429) return res.status(502).json({ error: 'O limite de uso da Gemini API foi atingido. Confira sua cota e tente mais tarde.' });
+    return res.status(502).json({ error: 'O serviço Gemini falhou. Confira os registros do Render para ver o detalhe e tente novamente.' });
   }
 }
