@@ -16,7 +16,8 @@ import {
   Sparkles,
   History,
   Lock,
-  Unlock
+  Unlock,
+  KeyRound
 } from 'lucide-react';
 import { Product, ProductCategory, CartItem, PaymentMethod, Sale, CashRegister } from '../types/padaria';
 import { storage } from '../services/storage';
@@ -27,17 +28,23 @@ interface PdvModuleProps {
   products: Product[];
   onProductsUpdated: () => void;
   onSaleCompleted: (sale: Sale) => void;
+  onExitStandalone?: () => void;
 }
 
 export const PdvModule: React.FC<PdvModuleProps> = ({
   products,
   onProductsUpdated,
-  onSaleCompleted
+  onSaleCompleted,
+  onExitStandalone
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory>('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'item'; productId: string } | { kind: 'all' } | null>(null);
+  const [managerPin, setManagerPin] = useState('');
+  const [deletePinError, setDeletePinError] = useState('');
+  const [isCheckingManagerPin, setIsCheckingManagerPin] = useState(false);
   const [discount, setDiscount] = useState<number>(0);
   
   // Scale Modal (Balança eletrônica touch)
@@ -162,27 +169,47 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
 
   // Alterar quantidade
   const handleUpdateQuantity = (productId: string, delta: number) => {
-    setCart((prev) => {
-      return prev
-        .map((item) => {
-          if (item.product.id === productId) {
-            const step = item.product.isWeighed ? 0.05 : 1;
-            const newQty = Math.max(0, item.quantity + delta * step);
-            if (newQty <= 0) return null;
-            return {
-              ...item,
-              quantity: newQty,
-              totalPrice: newQty * item.unitPrice,
-            };
-          }
-          return item;
-        })
-        .filter(Boolean) as CartItem[];
-    });
+    const selected = cart.find(item => item.product.id === productId);
+    if (!selected) return;
+    const step = selected.product.isWeighed ? 0.05 : 1;
+    const nextQuantity = selected.quantity + delta * step;
+    if (nextQuantity <= 0) { setDeleteTarget({ kind: 'item', productId }); setManagerPin(''); setDeletePinError(''); return; }
+    setCart(current => current.map(item => item.product.id === productId ? { ...item, quantity: nextQuantity, totalPrice: nextQuantity * item.unitPrice } : item));
+  };
+
+  const handleSetQuantity = (productId: string, rawValue: string) => {
+    if (!rawValue) return;
+    const nextQuantity = Number(rawValue);
+    if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) { setDeleteTarget({ kind: 'item', productId }); setManagerPin(''); setDeletePinError(''); return; }
+    setCart(current => current.map(item => item.product.id === productId ? { ...item, quantity: nextQuantity, totalPrice: nextQuantity * item.unitPrice } : item));
   };
 
   const handleRemoveItem = (productId: string) => {
-    setCart((prev) => prev.filter((item) => item.product.id !== productId));
+    setDeleteTarget({ kind: 'item', productId }); setManagerPin(''); setDeletePinError('');
+  };
+
+  const handleClearCart = () => {
+    if (!cart.length) return;
+    setDeleteTarget({ kind: 'all' }); setManagerPin(''); setDeletePinError('');
+  };
+
+  const authorizeCartRemoval = async () => {
+    if (!deleteTarget) return;
+    if (!storage.hasManagerPin()) { setDeletePinError('O PIN do gerente ainda não foi configurado. Saia do PDV e configure-o em Mais → Sistema → Offline / Sync.'); return; }
+    setIsCheckingManagerPin(true);
+    try {
+      if (!(await storage.verifyManagerPin(managerPin))) { setDeletePinError('PIN do gerente incorreto. Confira e tente novamente.'); return; }
+      if (deleteTarget.kind === 'all') {
+        const removedNames = cart.map(item => item.product.name).join(', ');
+        setCart([]); setDiscount(0);
+        storage.logAction('PDV · ITENS REMOVIDOS', removedNames, 'Gerente');
+      } else {
+        const item = cart.find(row => row.product.id === deleteTarget.productId);
+        setCart(current => current.filter(row => row.product.id !== deleteTarget.productId));
+        if (item) storage.logAction('PDV · ITEM REMOVIDO', item.product.name, 'Gerente');
+      }
+      setDeleteTarget(null); setManagerPin(''); setDeletePinError('');
+    } finally { setIsCheckingManagerPin(false); }
   };
 
   // Abrir Modal de Pagamento
@@ -212,6 +239,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   // Atalhos de caixa: F2 paga e F3 foca a busca/leitor
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if (deleteTarget || isCheckoutOpen || cashModal || completedSale || showSalesHistory) return;
       if (event.key === 'F2') { event.preventDefault(); handleOpenCheckout(); }
       if (event.key === 'F3') { event.preventDefault(); searchInputRef.current?.focus(); }
     };
@@ -312,7 +340,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
             <span>Leitor</span>
           </button>
           <button onClick={() => setShowSalesHistory(true)} className="flex items-center gap-1.5 px-3.5 py-2.5 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold shrink-0">
-            <History className="w-4 h-4" /><span>Vendas</span>
+            <History className="w-4 h-4" /><span>Histórico</span>
           </button>
         </div>
 
@@ -423,7 +451,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
           </div>
           {cart.length > 0 && (
             <button
-              onClick={() => setCart([])}
+              onClick={handleClearCart}
               className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 font-semibold flex items-center gap-1 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -471,9 +499,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                   >
                     <Minus className="w-3 h-3" />
                   </button>
-                  <span className="w-10 text-center font-bold text-xs font-mono tabular-nums">
-                    {item.product.isWeighed ? item.quantity.toFixed(3) : item.quantity}
-                  </span>
+                  <input type="number" min={item.product.isWeighed ? '0.001' : '1'} step={item.product.isWeighed ? '0.001' : '1'} value={item.product.isWeighed ? Number(item.quantity.toFixed(3)) : item.quantity} aria-label={`Quantidade de ${item.product.name}`} onChange={event => handleSetQuantity(item.product.id, event.target.value)} className="w-14 rounded-md border border-neutral-200 bg-white px-1 py-1 text-center text-xs font-bold tabular-nums dark:border-neutral-600 dark:bg-neutral-700"/>
                   <button
                     onClick={() => handleUpdateQuantity(item.product.id, 1)}
                     className="w-7 h-7 rounded-md bg-white dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 flex items-center justify-center text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 transition-colors"
@@ -552,6 +578,8 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
       </div>
 
       {cart.length > 0 && <div className="fixed inset-x-3 bottom-3 z-30 lg:hidden"><button onClick={handleOpenCheckout} className={`flex min-h-16 w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-white shadow-2xl transition-all active:scale-[0.99] ${isCashOpen ? 'bg-gradient-to-r from-emerald-700 to-emerald-600' : 'bg-neutral-700'}`}><span><span className="block text-[11px] font-semibold text-white/75">{cart.length} {cart.length === 1 ? 'item' : 'itens'} · conferir venda</span><strong className="font-mono text-lg">R$ {total.toFixed(2).replace('.', ',')}</strong></span><span className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-emerald-800"><CheckCircle className="h-4 w-4"/>Pagar</span></button></div>}
+
+      {deleteTarget && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"><section className="w-full max-w-sm space-y-4 rounded-2xl border border-neutral-200 bg-white p-5 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"><header className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"><KeyRound className="h-5 w-5"/></div><div><h2 className="font-extrabold">Autorização do gerente</h2><p className="mt-1 text-xs leading-relaxed text-neutral-500">{deleteTarget.kind === 'all' ? 'Para limpar todos os itens desta venda, confirme com o PIN do gerente.' : 'Para excluir este item da venda, confirme com o PIN do gerente.'}</p></div></header>{storage.hasManagerPin() ? <><label className="block text-xs font-semibold">PIN do gerente<input autoFocus type="password" inputMode="numeric" autoComplete="off" maxLength={8} value={managerPin} onChange={event => {setManagerPin(event.target.value.replace(/\D/g, ''));setDeletePinError('');}} onKeyDown={event => {if(event.key==='Enter')void authorizeCartRemoval();}} placeholder="Digite o PIN de 4 a 8 números" className="mt-1.5 w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-lg tracking-[0.35em] dark:border-neutral-700 dark:bg-neutral-800"/></label>{deletePinError&&<p role="alert" className="text-xs font-semibold text-red-600">{deletePinError}</p>}</> : <div className="rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"><p>{deletePinError || 'Configure primeiro o PIN do gerente em Mais → Sistema → Offline / Sync.'}</p>{onExitStandalone&&<button onClick={()=>{setDeleteTarget(null);onExitStandalone();}} className="mt-2 font-extrabold underline">Voltar ao sistema para configurar</button>}</div>}<div className="flex gap-2"><button onClick={()=>{setDeleteTarget(null);setManagerPin('');setDeletePinError('');}} className="min-h-11 flex-1 rounded-xl border border-neutral-200 px-3 text-sm font-bold dark:border-neutral-700">Manter item</button>{storage.hasManagerPin()&&<button disabled={!managerPin||isCheckingManagerPin} onClick={()=>void authorizeCartRemoval()} className="min-h-11 flex-1 rounded-xl bg-red-600 px-3 text-sm font-extrabold text-white disabled:opacity-50">{isCheckingManagerPin?'Verificando…':'Autorizar exclusão'}</button>}</div></section></div>}
 
       {cashModal && <div className="fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-4"><form onSubmit={cashModal === 'open' ? openCashRegister : closeCashRegister} className="bg-white dark:bg-neutral-900 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4"><h2 className="text-lg font-bold">{cashModal === 'open' ? 'Abrir caixa' : 'Fechar caixa'}</h2>{cashModal === 'open' ? <><label className="block text-sm">Operador<input required value={cashOperator} onChange={e=>setCashOperator(e.target.value)} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label><label className="block text-sm">Fundo de troco inicial (R$)<input required type="number" min="0" step="0.01" value={openingAmount} onChange={e=>setOpeningAmount(Number(e.target.value))} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label></> : <><div className="rounded-lg bg-neutral-100 dark:bg-neutral-800 p-3 text-sm">Valor esperado na gaveta: <strong>R$ {cashRegister.expectedCashAmount.toFixed(2).replace('.', ',')}</strong></div><label className="block text-sm">Dinheiro contado (R$)<input required type="number" min="0" step="0.01" value={countedCash} onChange={e=>setCountedCash(Number(e.target.value))} className="mt-1 w-full rounded-lg border p-2 dark:bg-neutral-800 dark:border-neutral-700"/></label></>}<div className="flex gap-2 justify-end"><button type="button" onClick={()=>setCashModal(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button><button type="submit" className={"rounded-lg px-4 py-2 text-sm font-bold text-white " + (cashModal === 'open' ? 'bg-emerald-600' : 'bg-red-600')}>{cashModal === 'open' ? 'Confirmar abertura' : 'Confirmar fechamento'}</button></div></form></div>}
 
