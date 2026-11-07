@@ -780,6 +780,11 @@ class StorageService {
     localStorage.removeItem(STORAGE_KEYS.FINANCES);
     localStorage.removeItem(STORAGE_KEYS.ORDERS);
     localStorage.removeItem(STORAGE_KEYS.SYNC);
+    localStorage.removeItem(STORAGE_KEYS.PRODUCTIONS);
+    localStorage.removeItem(STORAGE_KEYS.SUPPLIERS);
+    localStorage.removeItem(STORAGE_KEYS.AUDIT);
+    localStorage.removeItem(STORAGE_KEYS.PURCHASES);
+    localStorage.removeItem(STORAGE_KEYS.VOICE_NOTES);
     localStorage.removeItem(STORAGE_KEYS.TASKS);
   }
 }

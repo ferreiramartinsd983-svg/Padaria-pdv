@@ -11,6 +11,7 @@ import { AndroidProjectExplorer } from './components/AndroidProjectExplorer';
 import { OperationsModule } from './components/OperationsModule';
 import { VoiceNotesModule } from './components/VoiceNotesModule';
 import { AssistantModule } from './components/AssistantModule';
+import { ResetDataModal } from './components/ResetDataModal';
 import { Product, Sale } from './types/padaria';
 import { storage } from './services/storage';
 import { ArrowRight, ArrowLeft, Bot, ChefHat, MessageCircle, Package, ShoppingCart, Sparkles, Store, Mic2, X } from 'lucide-react';
@@ -62,6 +63,7 @@ export default function App() {
   const [showWelcome, setShowWelcome] = useState(true);
   const [isPdvStandalone, setIsPdvStandalone] = useState(false);
   const [isAttendantOpen, setIsAttendantOpen] = useState(false);
+  const [isResetDataOpen, setIsResetDataOpen] = useState(false);
   const [previousTab, setPreviousTab] = useState<string>('pdv');
   const [currentTab, setCurrentTab] = useState<string>('pdv');
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -146,6 +148,7 @@ export default function App() {
         onChangeViewMode={setViewMode}
         isOnline={isOnline}
         isAndroidApp={isAndroidApp}
+        onOpenResetData={() => setIsResetDataOpen(true)}
       />
 
       <main className="flex-1 p-4 sm:p-6 max-w-7xl mx-auto w-full flex flex-col items-center">
@@ -233,6 +236,7 @@ export default function App() {
 
       {currentTab !== 'assistant' && <button onClick={() => setIsAttendantOpen(true)} className="fixed bottom-5 right-4 z-50 inline-flex min-h-12 items-center gap-2 rounded-full bg-amber-500 px-4 text-sm font-extrabold text-white shadow-xl shadow-amber-900/30 hover:bg-amber-600 sm:bottom-6 sm:right-6"><MessageCircle className="h-5 w-5"/><span>Falar com atendente</span></button>}
       {isAttendantOpen && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={event => { if (event.target === event.currentTarget) setIsAttendantOpen(false); }}><section role="dialog" aria-modal="true" aria-label="Atendente virtual" className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-neutral-900 sm:rounded-3xl"><header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><div><h2 className="font-extrabold">Atendente virtual</h2><p className="text-xs text-neutral-500">Fale ou digite um comando</p></div><button onClick={() => setIsAttendantOpen(false)} aria-label="Fechar atendente" className="rounded-lg p-2 hover:bg-neutral-100 dark:hover:bg-neutral-800"><X className="h-5 w-5"/></button></header><div className="overflow-y-auto p-4"><AssistantModule onProductsUpdated={handleRefreshProducts} onSaleCompleted={handleSaleCompleted} /></div></section></div>}
+      {isResetDataOpen && <ResetDataModal onClose={() => setIsResetDataOpen(false)} onReset={() => { setProducts(storage.getProducts()); setCurrentTab('pdv'); setIsPdvStandalone(false); }} onGoToSync={() => { setIsResetDataOpen(false); setCurrentTab('sync'); }} />}
       {/* Footer simples e profissional */}
       <footer className="py-4 border-t border-neutral-200 dark:border-neutral-800 text-center text-xs text-neutral-400 bg-white/50 dark:bg-neutral-900/50">
         <p>Padaria Master 2.9 · Gestão da padaria neste dispositivo</p>

@@ -24,6 +24,7 @@ import {
   Factory,
   Settings2,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { downloadAndroidProjectZip } from '../services/projectFiles';
 
@@ -38,6 +39,7 @@ interface HeaderProps {
   onChangeViewMode: (mode: ViewMode) => void;
   isOnline: boolean;
   isAndroidApp: boolean;
+  onOpenResetData: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -48,7 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
   viewMode,
   onChangeViewMode,
   isOnline,
-  isAndroidApp
+  isAndroidApp,
+  onOpenResetData
 }) => {
   const [isDownloading, setIsDownloading] = React.useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = React.useState(false);
@@ -223,7 +226,7 @@ export const Header: React.FC<HeaderProps> = ({
             const active = currentTab === link.id;
             const Icon = link.id === 'recipes' ? ChefHat : link.id === 'operations' ? Factory : link.id === 'voice-notes' ? NotebookPen : link.id === 'cash' ? Wallet : link.id === 'finance' ? ChartNoAxesCombined : link.id === 'sync' ? RefreshCw : CodeXml;
             return <button key={link.id} onClick={() => { onSelectTab(link.id); setIsMoreMenuOpen(false); }} aria-current={active ? 'page' : undefined} className={`flex min-h-14 items-center gap-3 rounded-xl border p-3 text-left text-sm font-semibold transition-colors ${active ? 'border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200' : 'border-neutral-200 hover:border-amber-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800'}`}><Icon className={`h-5 w-5 shrink-0 ${active ? 'text-amber-600' : 'text-neutral-500'}`}/><span>{link.label}</span></button>;
-          })}</div></section>;
+          })}</div>{group.title === 'Sistema' && <button onClick={() => { setIsMoreMenuOpen(false); onOpenResetData(); }} className="mt-2 flex min-h-12 w-full items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-3 text-left text-sm font-bold text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"><Trash2 className="h-5 w-5"/><span>Resetar informações</span></button>}</section>;
         })}
       </div>}
       {isAppearanceOpen && <section id="appearance-menu" aria-label="Configurações de aparência" className="absolute right-3 top-full z-50 mt-2 w-[min(24rem,calc(100vw-1.5rem))] rounded-2xl border border-neutral-200 bg-white p-4 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
