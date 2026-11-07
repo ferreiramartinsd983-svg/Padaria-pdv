@@ -13,7 +13,7 @@ import { VoiceNotesModule } from './components/VoiceNotesModule';
 import { AssistantModule } from './components/AssistantModule';
 import { Product, Sale } from './types/padaria';
 import { storage } from './services/storage';
-import { ArrowRight, ArrowLeft, Bot, ChefHat, Package, ShoppingCart, Sparkles, Store, Mic2 } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Bot, ChefHat, MessageCircle, Package, ShoppingCart, Sparkles, Store, Mic2, X } from 'lucide-react';
 import frenchBreadImage from './assets/images/bakery_pao_frances_1793807977222.jpg';
 import cheeseBreadImage from './assets/images/bakery_pao_de_queijo_1793807977568.jpg';
 import cakeImage from './assets/images/bakery_bolo_artesanal_1793807978147.jpg';
@@ -61,6 +61,7 @@ export default function App() {
   const isAndroidApp = new URLSearchParams(window.location.search).get('platform') === 'android';
   const [showWelcome, setShowWelcome] = useState(true);
   const [isPdvStandalone, setIsPdvStandalone] = useState(false);
+  const [isAttendantOpen, setIsAttendantOpen] = useState(false);
   const [previousTab, setPreviousTab] = useState<string>('pdv');
   const [currentTab, setCurrentTab] = useState<string>('pdv');
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -129,6 +130,8 @@ export default function App() {
         <button onClick={handleExitStandalonePdv} aria-label="Voltar ao sistema" className="flex min-h-11 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-bold shadow-sm transition-colors hover:border-amber-400 hover:bg-amber-50 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-neutral-700 sm:px-4"><ArrowLeft className="h-4 w-4"/><span className="hidden sm:inline">Voltar ao sistema</span></button>
       </div>
       <main className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 lg:p-6"><PdvModule products={products} onProductsUpdated={handleRefreshProducts} onSaleCompleted={handleSaleCompleted} onExitStandalone={handleExitStandalonePdv} /></main>
+      <button onClick={() => setIsAttendantOpen(true)} className="fixed bottom-5 right-4 z-50 inline-flex min-h-12 items-center gap-2 rounded-full bg-amber-500 px-4 text-sm font-extrabold text-white shadow-xl shadow-amber-900/30 hover:bg-amber-600 sm:bottom-6 sm:right-6"><MessageCircle className="h-5 w-5"/><span>Falar com atendente</span></button>
+      {isAttendantOpen && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={event => { if (event.target === event.currentTarget) setIsAttendantOpen(false); }}><section role="dialog" aria-modal="true" aria-label="Atendente virtual" className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-neutral-900 sm:rounded-3xl"><header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><div><h2 className="font-extrabold">Atendente virtual</h2><p className="text-xs text-neutral-500">Fale ou digite um comando</p></div><button onClick={() => setIsAttendantOpen(false)} aria-label="Fechar atendente" className="rounded-lg p-2 hover:bg-neutral-100 dark:hover:bg-neutral-800"><X className="h-5 w-5"/></button></header><div className="overflow-y-auto p-4"><AssistantModule onProductsUpdated={handleRefreshProducts} onSaleCompleted={handleSaleCompleted} /></div></section></div>}
     </div>
   );
 
@@ -228,6 +231,8 @@ export default function App() {
         )}
       </main>
 
+      {currentTab !== 'assistant' && <button onClick={() => setIsAttendantOpen(true)} className="fixed bottom-5 right-4 z-50 inline-flex min-h-12 items-center gap-2 rounded-full bg-amber-500 px-4 text-sm font-extrabold text-white shadow-xl shadow-amber-900/30 hover:bg-amber-600 sm:bottom-6 sm:right-6"><MessageCircle className="h-5 w-5"/><span>Falar com atendente</span></button>}
+      {isAttendantOpen && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={event => { if (event.target === event.currentTarget) setIsAttendantOpen(false); }}><section role="dialog" aria-modal="true" aria-label="Atendente virtual" className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-neutral-900 sm:rounded-3xl"><header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><div><h2 className="font-extrabold">Atendente virtual</h2><p className="text-xs text-neutral-500">Fale ou digite um comando</p></div><button onClick={() => setIsAttendantOpen(false)} aria-label="Fechar atendente" className="rounded-lg p-2 hover:bg-neutral-100 dark:hover:bg-neutral-800"><X className="h-5 w-5"/></button></header><div className="overflow-y-auto p-4"><AssistantModule onProductsUpdated={handleRefreshProducts} onSaleCompleted={handleSaleCompleted} /></div></section></div>}
       {/* Footer simples e profissional */}
       <footer className="py-4 border-t border-neutral-200 dark:border-neutral-800 text-center text-xs text-neutral-400 bg-white/50 dark:bg-neutral-900/50">
         <p>Padaria Master 2.9 · Gestão da padaria neste dispositivo</p>

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Bot, Check, Circle, Clock3, ListTodo, PackageMinus, Send, ShoppingCart, Trash2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Bot, Check, Circle, Clock3, ListTodo, Mic, MicOff, PackageMinus, Send, ShoppingCart, Trash2, X } from 'lucide-react';
 import { Product, Sale, TaskItem } from '../types/padaria';
 import { storage } from '../services/storage';
 
@@ -8,6 +8,10 @@ type PendingAction =
   | { kind: 'sale'; product: Product; quantity: number; paymentMethod: Sale['paymentMethod'] }
   | { kind: 'stock_exit'; product: Product; quantity: number; reason: string };
 type AssistantProps = { onProductsUpdated: () => void; onSaleCompleted: (sale: Sale) => void };
+type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
+type SpeechRecognitionEventLike = { resultIndex: number; results: ArrayLike<SpeechResult> };
+type SpeechRecognitionLike = { lang: string; continuous: boolean; interimResults: boolean; onresult: ((event: SpeechRecognitionEventLike) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null; start: () => void; stop: () => void; abort: () => void };
+type SpeechWindow = Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 const money = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
@@ -22,6 +26,9 @@ export const AssistantModule: React.FC<AssistantProps> = ({ onProductsUpdated, o
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  useEffect(() => () => recognitionRef.current?.abort(), []);
 
   const say = (text: string) => setMessages(current => [...current, { id: `${Date.now()}_${Math.random()}`, role: 'assistant', text }]);
   const persistTasks = (updated: TaskItem[]) => {
@@ -43,6 +50,23 @@ export const AssistantModule: React.FC<AssistantProps> = ({ onProductsUpdated, o
   const deleteTask = (task: TaskItem) => {
     persistTasks(tasks.filter(item => item.id !== task.id));
     setSuccess(`Tarefa removida: ${task.title}`);
+  };
+
+  const toggleListening = () => {
+    if (listening) { recognitionRef.current?.stop(); return; }
+    const SpeechRecognition = (window as SpeechWindow).SpeechRecognition || (window as SpeechWindow).webkitSpeechRecognition;
+    if (!SpeechRecognition) { setError('O ditado por voz não está disponível neste aparelho. Digite o comando no campo.'); return; }
+    setError('');
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'pt-BR'; recognition.continuous = false; recognition.interimResults = false;
+    recognition.onresult = event => {
+      const spoken = Array.from(event.results).filter(result => result.isFinal).map(result => result[0].transcript.trim()).join(' ');
+      if (spoken) setCommand(spoken);
+    };
+    recognition.onerror = event => { setError(event.error === 'not-allowed' ? 'Permita o uso do microfone para ditar o comando.' : 'Não consegui reconhecer a fala. Você pode digitar o comando.'); setListening(false); };
+    recognition.onend = () => { setListening(false); recognitionRef.current = null; };
+    recognitionRef.current = recognition;
+    try { recognition.start(); setListening(true); } catch { setError('Não consegui iniciar o microfone. Digite o comando.'); }
   };
 
   const runCommand = (event?: React.FormEvent) => {
@@ -184,7 +208,7 @@ export const AssistantModule: React.FC<AssistantProps> = ({ onProductsUpdated, o
     <section className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="mb-3 flex items-center gap-2"><ListTodo className="h-5 w-5 text-amber-500"/><h3 className="font-bold">Comandos rápidos</h3></div>
       <div className="flex flex-wrap gap-2">{examples.map(example => <button key={example.label} type="button" onClick={() => setCommand(example.command)} className="rounded-full border border-neutral-200 px-3 py-2 text-xs font-semibold hover:border-amber-400 hover:bg-amber-50 dark:border-neutral-700 dark:hover:bg-neutral-800">{example.label}</button>)}</div>
-      <form onSubmit={runCommand} className="mt-4 flex gap-2"><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Ex.: criar tarefa: comprar farinha amanhã" aria-label="Comando do assistente" className="min-w-0 flex-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm dark:border-neutral-700 dark:bg-neutral-800"/><button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-white hover:bg-amber-600"><Send className="h-4 w-4"/><span className="hidden sm:inline">Enviar</span></button></form>
+      <form onSubmit={runCommand} className="mt-4 flex gap-2"><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Ex.: criar tarefa: comprar farinha amanhã" aria-label="Comando do atendente" className="min-w-0 flex-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm dark:border-neutral-700 dark:bg-neutral-800"/><button type="button" onClick={toggleListening} aria-label={listening ? "Parar ditado" : "Ditar comando por voz"} title={listening ? "Parar ditado" : "Ditar comando por voz"} className={`rounded-xl border px-3 ${listening ? "border-red-300 bg-red-50 text-red-600" : "border-neutral-200 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"}`}>{listening ? <MicOff className="h-5 w-5"/> : <Mic className="h-5 w-5"/>}</button><button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-white hover:bg-amber-600"><Send className="h-4 w-4"/><span className="hidden sm:inline">Enviar</span></button></form>
       <details className="mt-3 text-xs text-neutral-500"><summary className="cursor-pointer font-semibold">Ver comandos</summary><ul className="mt-2 list-inside list-disc space-y-1"><li>criar tarefa: limpar vitrine amanhã</li><li>listar tarefas · concluir tarefa 1 · apagar tarefa 1</li><li>vender 2 pão francês no Pix</li><li>saída 1 bolo, motivo: avariado</li></ul></details>
     </section>
     {(error || success) && <p role="status" className={`rounded-xl p-3 text-sm ${error ? 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'}`}>{error || success}</p>}
