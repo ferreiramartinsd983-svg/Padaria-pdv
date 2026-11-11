@@ -33,7 +33,7 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install web dependencies
-        run: set -o pipefail; bun install --frozen-lockfile 2>&1 | tee web-build.log
+        run: set -o pipefail; bun install 2>&1 | tee web-build.log
 
       - name: Build web interface
         run: set -o pipefail; bun run build 2>&1 | tee -a web-build.log
