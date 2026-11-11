@@ -128,10 +128,16 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
 
   // Adicionar produto ao carrinho
   const handleProductClick = (product: Product) => {
+    const inCart = cart.find((item) => item.product.id === product.id)?.quantity || 0;
+    if (product.stockQuantity <= inCart) {
+      setCartFeedback(product.stockQuantity <= 0 ? product.name + ': sem estoque disponível' : 'Estoque disponível de ' + product.name + ': ' + (product.stockQuantity - inCart));
+      sound.playAlert();
+      return;
+    }
     if (product.isWeighed) {
       setCartFeedback(`Defina o peso de ${product.name}`);
       setScaleProduct(product);
-      setScaleWeight(0.350);
+      setScaleWeight(Math.min(0.350, Math.max(0.05, product.stockQuantity - inCart)));
       return;
     }
 
@@ -165,6 +171,13 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   // Confirmar pesagem da balança
   const handleConfirmScale = () => {
     if (!scaleProduct) return;
+    const inCart = cart.find((item) => item.product.id === scaleProduct.id)?.quantity || 0;
+    const available = Math.max(0, scaleProduct.stockQuantity - inCart);
+    if (scaleWeight <= 0 || scaleWeight > available) {
+      setCartFeedback(available > 0 ? 'Só há ' + available.toFixed(3) + ' kg disponíveis de ' + scaleProduct.name : scaleProduct.name + ': sem estoque disponível');
+      sound.playAlert();
+      return;
+    }
     sound.playBeep();
     setCartFeedback(`${scaleProduct.name} adicionado`);
     const calculatedTotal = scaleWeight * scaleProduct.salePrice;
@@ -183,14 +196,18 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
     if (!selected) return;
     const step = selected.product.isWeighed ? 0.05 : 1;
     const nextQuantity = selected.quantity + delta * step;
+    if (nextQuantity > selected.product.stockQuantity) { setCartFeedback('Estoque máximo de ' + selected.product.name + ': ' + selected.product.stockQuantity); sound.playAlert(); return; }
     if (nextQuantity <= 0) { setDeleteTarget({ kind: 'item', productId }); setManagerPin(''); setDeletePinError(''); return; }
     setCart(current => current.map(item => item.product.id === productId ? { ...item, quantity: nextQuantity, totalPrice: nextQuantity * item.unitPrice } : item));
   };
 
   const handleSetQuantity = (productId: string, rawValue: string) => {
     if (!rawValue) return;
+    const selected = cart.find((item) => item.product.id === productId);
+    if (!selected) return;
     const nextQuantity = Number(rawValue);
     if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) { setDeleteTarget({ kind: 'item', productId }); setManagerPin(''); setDeletePinError(''); return; }
+    if (nextQuantity > selected.product.stockQuantity) { setCartFeedback('Estoque máximo de ' + selected.product.name + ': ' + selected.product.stockQuantity); sound.playAlert(); return; }
     setCart(current => current.map(item => item.product.id === productId ? { ...item, quantity: nextQuantity, totalPrice: nextQuantity * item.unitPrice } : item));
   };
 
@@ -227,6 +244,8 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
     if (!isCashOpen) { setCashModal('open'); return; }
     if (cart.length === 0) return;
     setAmountPaid(Math.ceil(total));
+    setPaymentMethod('DINHEIRO');
+    setMixedPayments({ DINHEIRO: 0, PIX: 0, CARTAO_DEBITO: 0, CARTAO_CREDITO: 0 });
     setIsCheckoutOpen(true);
   };
 
@@ -235,7 +254,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
     if (event.key !== 'Enter') return;
     const code = searchQuery.trim();
     const matchedProduct = products.find(product => !product.isArchived && product.barcode.trim() === code);
-    if (!matchedProduct) return;
+    if (!matchedProduct) { if (/^\d{6,}$/.test(code)) { event.preventDefault(); setCartFeedback('Código não cadastrado: ' + code); sound.playAlert(); } return; }
     event.preventDefault();
     handleProductClick(matchedProduct);
     setSearchQuery('');
@@ -260,7 +279,19 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
   // Finalizar Venda
   const handleFinalizeSale = () => {
     if (!isCashOpen) { setIsCheckoutOpen(false); setCashModal('open'); return; }
-    if ((paymentMethod === 'DINHEIRO' && amountPaid < total) || (paymentMethod === 'MISTO' && Math.abs(mixedTotal-total) > 0.009)) {
+    if ((paymentMethod === 'DINHEIRO' && (!Number.isFinite(amountPaid) || amountPaid < total)) || (paymentMethod === 'MISTO' && (Object.values(mixedPayments).some((amount) => !Number.isFinite(amount) || amount < 0) || Math.abs(mixedTotal-total) > 0.009))) {
+      sound.playAlert();
+      return;
+    }
+    const latestProducts = storage.getProducts();
+    const unavailable = cart.find((item) => {
+      const latest = latestProducts.find((product) => product.id === item.product.id);
+      return !latest || latest.isArchived || item.quantity > latest.stockQuantity;
+    });
+    if (unavailable) {
+      setIsCheckoutOpen(false);
+      setCartFeedback('Estoque alterado durante a venda. Confira ' + unavailable.product.name + ' e tente novamente.');
+      onProductsUpdated();
       sound.playAlert();
       return;
     }
@@ -303,6 +334,8 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
       setCart([]);
       setDiscount(0);
       setCustomerName('');
+      setPaymentMethod('DINHEIRO');
+      setMixedPayments({ DINHEIRO: 0, PIX: 0, CARTAO_DEBITO: 0, CARTAO_CREDITO: 0 });
 
       onProductsUpdated();
       onSaleCompleted(newSale);
@@ -311,15 +344,19 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
 
   return (
     <div className="space-y-4 pb-24 lg:pb-0">
-      <section className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3"><div className={"w-10 h-10 rounded-xl flex items-center justify-center " + (isCashOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>{isCashOpen ? <Unlock className="w-5 h-5"/> : <Lock className="w-5 h-5"/>}</div><div><div className="font-bold text-sm">Caixa {isCashOpen ? 'aberto' : 'fechado'}</div><div className="text-xs text-neutral-500">{isCashOpen ? cashRegister.operatorName + ' · Gaveta esperada: R$ ' + cashRegister.expectedCashAmount.toFixed(2).replace('.', ',') : 'Abra o caixa para iniciar vendas'}</div></div></div>
-        {isCashOpen ? <button onClick={() => { setCountedCash(cashRegister.expectedCashAmount); setCashModal('close'); }} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-600 text-white text-xs font-bold"><Lock className="w-4 h-4"/>Fechar caixa</button> : <button onClick={() => setCashModal('open')} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"><Unlock className="w-4 h-4"/>Abrir caixa</button>}
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 p-5 text-white shadow-lg shadow-orange-900/10">
+        <div className="pointer-events-none absolute -right-8 -top-16 h-48 w-48 rounded-full border-[24px] border-white/10"/>
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 shadow-inner backdrop-blur"><Sparkles className="h-6 w-6"/></div><div><p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/70">Padaria Master · PDV</p><h1 className="text-xl font-extrabold tracking-tight sm:text-2xl">Frente de caixa</h1><p className="mt-0.5 text-xs text-white/80">Atendimento rápido e controle da venda em tempo real</p></div></div>
+          <div className="flex items-center gap-3 rounded-xl border border-white/15 bg-black/10 px-3 py-2 backdrop-blur-sm"><div className={"flex h-9 w-9 items-center justify-center rounded-xl " + (isCashOpen ? 'bg-emerald-300 text-emerald-950' : 'bg-white/20 text-white')}>{isCashOpen ? <Unlock className="h-4 w-4"/> : <Lock className="h-4 w-4"/>}</div><div><p className="text-xs font-extrabold">Caixa {isCashOpen ? 'aberto' : 'fechado'}</p><p className="text-[10px] text-white/75">{isCashOpen ? cashRegister.operatorName + ' · Gaveta R$ ' + cashRegister.expectedCashAmount.toFixed(2).replace('.', ',') : 'Abra para iniciar as vendas'}</p></div>{isCashOpen ? <button onClick={() => { setCountedCash(cashRegister.expectedCashAmount); setCashModal('close'); }} className="ml-1 rounded-lg bg-white/15 px-3 py-2 text-[11px] font-bold transition hover:bg-white/25"><Lock className="mr-1 inline h-3.5 w-3.5"/>Fechar</button> : <button onClick={() => setCashModal('open')} className="ml-1 rounded-lg bg-white px-3 py-2 text-[11px] font-extrabold text-emerald-800 transition hover:bg-emerald-50"><Unlock className="mr-1 inline h-3.5 w-3.5"/>Abrir caixa</button>}</div>
+        </div>
       </section>
       <div className={"grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[calc(100vh-5rem)] " + (!isCashOpen ? 'opacity-75' : '')}>
       {/* Coluna da Esquerda: Catálogo Touch e Busca (8 colunas) */}
       <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-2 px-1"><div><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-400">Catálogo</p><h2 className="text-lg font-extrabold tracking-tight">Escolha os produtos</h2></div><span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-neutral-500 shadow-sm dark:bg-neutral-900">Toque para adicionar · F3 leitor</span></div>
         {/* Barra Superior de Busca & Scanner */}
-        <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-wrap sm:flex-nowrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200/80 bg-white p-3 shadow-sm ring-1 ring-amber-100/60 dark:border-neutral-800 dark:bg-neutral-900 dark:ring-neutral-800">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
@@ -329,7 +366,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar nome ou passe o leitor de código de barras..."
-              className="w-full pl-9 pr-4 py-2.5 bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-neutral-400"
+              className="w-full rounded-xl border border-neutral-200 bg-neutral-50 py-3 pl-10 pr-10 text-sm shadow-inner transition-all placeholder:text-neutral-400 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-amber-500/10 dark:border-neutral-700 dark:bg-neutral-800 dark:focus:bg-neutral-900"
             />
             {searchQuery && (
               <button
@@ -388,7 +425,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                 key={product.id}
                 onClick={() => handleProductClick(product)}
                 aria-label={`Adicionar ${product.name} à venda, R$ ${product.salePrice.toFixed(2).replace('.', ',')}`}
-                className="group relative flex min-h-48 w-full appearance-none flex-col justify-between rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-sm transition-all hover:border-amber-500/70 hover:shadow-lg active:scale-[0.98] active:bg-amber-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-amber-400/50 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800 select-none touch-manipulation"
+                className="group relative flex min-h-48 w-full appearance-none flex-col justify-between rounded-2xl border border-neutral-200/80 bg-white p-3.5 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:border-amber-400 hover:shadow-xl hover:shadow-amber-900/5 active:scale-[0.98] active:bg-amber-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-amber-400/40 dark:border-neutral-800 dark:bg-neutral-900 dark:active:bg-neutral-800 select-none touch-manipulation"
               >
                 {cartItem && <span className="absolute right-2 top-2 z-10 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-extrabold text-white shadow-md">No carrinho · {cartItem.product.isWeighed ? cartItem.quantity.toFixed(3) + ' kg' : '× ' + cartItem.quantity}</span>}
                 {/* Imagem do produto ou fallback sofisticado */}
@@ -452,26 +489,11 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
       </div>
 
       {/* Coluna da Direita: Carrinho e Checkout (5 colunas) */}
-      <div className="lg:col-span-5 xl:col-span-4 flex flex-col bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-5rem)] sticky top-20">
+      <div className="lg:col-span-5 xl:col-span-4 flex flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl shadow-neutral-900/5 ring-1 ring-black/[0.02] dark:border-neutral-800 dark:bg-neutral-900 h-[calc(100vh-5rem)] sticky top-20">
         {/* Cabeçalho do Carrinho */}
-        <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-800/30">
-          <div>
-            <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100">
-              Cupom da Venda
-            </h3>
-            <p className="text-xs text-neutral-400">
-              {cart.length} {cart.length === 1 ? 'item' : 'itens'} no pedido atual
-            </p>
-          </div>
-          {cart.length > 0 && (
-            <button
-              onClick={handleClearCart}
-              className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 font-semibold flex items-center gap-1 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Limpar</span>
-            </button>
-          )}
+        <div className="flex items-center justify-between border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-amber-50/70 p-4 dark:border-neutral-800 dark:from-neutral-900 dark:to-neutral-800/60">
+          <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-amber-600 dark:text-amber-400">Venda em andamento</p><h3 className="mt-0.5 font-extrabold text-base text-neutral-900 dark:text-neutral-100">Cupom da venda</h3><p className="text-xs text-neutral-500">{cart.length} {cart.length === 1 ? 'produto diferente' : 'produtos diferentes'}</p></div>
+          <div className="flex items-center gap-2"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500 text-white shadow-md shadow-amber-600/20"><Barcode className="h-5 w-5"/></div>{cart.length > 0 && <button onClick={handleClearCart} className="rounded-lg border border-red-200 bg-white px-2.5 py-2 text-[11px] font-bold text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:bg-neutral-900 dark:text-red-400"><Trash2 className="mr-1 inline h-3.5 w-3.5"/>Limpar</button>}</div>
         </div>
 
         {/* Lista de Itens do Carrinho */}
@@ -492,7 +514,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
             cart.map((item) => (
               <div
                 key={item.product.id}
-                className="flex items-center justify-between gap-3 p-3 bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-100 dark:border-neutral-800 rounded-xl"
+                className="group flex items-center justify-between gap-2.5 rounded-2xl border border-neutral-200/80 bg-white p-3 shadow-sm transition hover:border-amber-200 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-800/70"
               >
                 <div className="flex-1 min-w-0">
                   <h5 className="font-semibold text-xs text-neutral-900 dark:text-neutral-100 truncate">
@@ -541,7 +563,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
         </div>
 
         {/* Rodapé do Caixa com Totais e Botão Cobrar */}
-        <div className="p-4 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-900/80 space-y-3">
+        <div className="space-y-3 border-t border-neutral-200 bg-gradient-to-b from-neutral-50 to-white p-4 dark:border-neutral-800 dark:from-neutral-900 dark:to-neutral-900">
           <div className="space-y-1.5 text-xs">
             <div className="flex justify-between text-neutral-500">
               <span>Subtotal</span>
@@ -556,9 +578,10 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
                 <input
                   type="number"
                   min="0"
+                  max={subtotal}
                   step="0.5"
                   value={discount || ''}
-                  onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
+                  onChange={(e) => setDiscount(Math.min(subtotal, Math.max(0, Number(e.target.value))))}
                   placeholder="0,00"
                   className="w-16 px-1.5 py-0.5 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-right font-mono tabular-nums text-xs"
                 />
@@ -569,7 +592,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
               <span className="font-bold text-sm text-neutral-900 dark:text-neutral-100">
                 Total a Pagar
               </span>
-              <span className="text-2xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+              <span className="rounded-xl bg-emerald-50 px-3 py-1.5 text-2xl font-black font-mono tabular-nums text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900">
                 R$ {total.toFixed(2).replace('.', ',')}
               </span>
             </div>
@@ -578,7 +601,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
           <button
             onClick={handleOpenCheckout}
             disabled={cart.length === 0}
-            className={`w-full py-3.5 px-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.99] ${
+            className={`w-full py-4 px-4 rounded-xl font-extrabold text-base flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.99] ${
               cart.length > 0 && isCashOpen
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
                 : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-400 cursor-not-allowed'
@@ -669,8 +692,9 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
               <div className="pt-3">
                 <input
                   type="range"
-                  min="0.05"
-                  max="3.00"
+                  min="0.01"
+                  max={Math.max(0.01, Math.min(3, scaleProduct.stockQuantity - (cart.find((item) => item.product.id === scaleProduct.id)?.quantity || 0)))}
+                  step="0.01"
                   step="0.01"
                   value={scaleWeight}
                   onChange={(e) => setScaleWeight(Number(e.target.value))}
@@ -879,7 +903,7 @@ export const PdvModule: React.FC<PdvModuleProps> = ({
               </button>
               <button
                 onClick={handleFinalizeSale}
-                disabled={isProcessingPayment || (paymentMethod === 'DINHEIRO' && amountPaid < total) || (paymentMethod === 'MISTO' && Math.abs(mixedTotal-total) > 0.009)}
+                disabled={isProcessingPayment || (paymentMethod === 'DINHEIRO' && (!Number.isFinite(amountPaid) || amountPaid < total)) || (paymentMethod === 'MISTO' && (Object.values(mixedPayments).some(amount => !Number.isFinite(amount) || amount < 0) || Math.abs(mixedTotal-total) > 0.009))}
                 className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
               >
                 {isProcessingPayment ? (

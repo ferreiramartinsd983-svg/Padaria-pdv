@@ -1,5 +1,5 @@
 import { downloadBlob } from '../services/download';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Cloud, 
   CloudOff, 
@@ -31,6 +31,40 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinMessage, setPinMessage] = useState('');
+  const [shareCode, setShareCode] = useState(() => localStorage.getItem('padaria_share_code') || '');
+  const [shareServer, setShareServer] = useState(() => localStorage.getItem('padaria_share_server') || (window.location.hostname === 'appassets.androidplatform.net' ? '' : window.location.origin));
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareMessage, setShareMessage] = useState('');
+
+  const startPhoneServer = () => {
+    const bridge = (window as Window & { PadariaServerBridge?: { startDataServer: () => string } }).PadariaServerBridge;
+    if (!bridge) { setShareMessage('Esta opção funciona no APK Android.'); return; }
+    const address = bridge.startDataServer();
+    if (address.startsWith('ERROR:')) { setShareMessage(address.slice(6)); return; }
+    setShareServer(address);
+    localStorage.setItem('padaria_share_server', address);
+    setShareMessage('Este celular agora é o servidor. Conecte os outros aparelhos à mesma rede Wi-Fi e informe este endereço neles.');
+  };
+
+  const syncSharedData = async () => {
+    const code = shareCode.trim().toUpperCase();
+    if (!/^[A-Z0-9-]{4,32}$/.test(code)) { setShareMessage('Informe um código com 4 a 32 letras ou números.'); return; }
+    setShareBusy(true); setShareMessage('Conectando ao grupo...');
+    try {
+      localStorage.setItem('padaria_share_code', code);
+      const server = shareServer.trim().replace(/\/$/, '');
+      localStorage.setItem('padaria_share_server', server);
+      const endpoint = `${server}/api/share/${encodeURIComponent(code)}`;
+      const response = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: storage.exportFullBackup() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Falha ao sincronizar.');
+      if (!storage.importFullBackup(JSON.stringify(data))) throw new Error('Os dados recebidos não puderam ser aplicados.');
+      const updated: SyncState = { ...syncState, lastSyncTimestamp: Date.now(), pendingChangesCount: 0 };
+      setSyncState(updated); storage.saveSyncState(updated); onDatabaseRestored();
+      setShareMessage('Compartilhado com sucesso. Os aparelhos deste grupo já podem acessar os dados.');
+    } catch (error) { setShareMessage(error instanceof Error ? error.message : 'Não foi possível conectar. Confira sua internet e o servidor do app.'); }
+    finally { setShareBusy(false); }
+  };
 
   const handleToggleFirestore = () => {
     const updated: SyncState = {
@@ -96,6 +130,12 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
     reader.readAsText(file);
   };
 
+  useEffect(() => {
+    if (!shareCode) return;
+    const timer = window.setInterval(() => { void syncSharedData(); }, 20000);
+    return () => window.clearInterval(timer);
+  }, [shareCode]);
+
   const saveManagerPin = async () => {
     if (newPin !== confirmPin) { setPinMessage('Os PINs não coincidem.'); return; }
     const ok = await storage.setManagerPin(newPin, currentPin || undefined);
@@ -105,6 +145,14 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
 
   return (
     <div className="space-y-6">
+      <section className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 space-y-3">
+        <div><h3 className="font-bold flex items-center gap-2"><Wifi className="w-5 h-5 text-amber-500"/>Compartilhar entre celulares</h3><p className="text-xs text-neutral-500 mt-1">Use o mesmo servidor e código nos aparelhos. Escolha um celular como servidor e conecte todos à mesma rede Wi-Fi. Os demais sincronizam a cada 20 segundos enquanto esta tela estiver aberta.</p></div>
+        {(window as Window & { PadariaServerBridge?: unknown }).PadariaServerBridge && <button onClick={startPhoneServer} className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-bold">Usar este celular como servidor</button>}
+        <input type="url" value={shareServer} onChange={e => setShareServer(e.target.value)} placeholder="Servidor do app (ex.: https://padaria.exemplo.com)" className="w-full p-3 rounded-xl border border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 text-sm"/>
+        <p className="text-[11px] text-neutral-500">No APK Android, inicie o servidor em um celular e informe nos outros o endereço mostrado. Todos precisam estar na mesma rede Wi-Fi.</p>
+        <div className="flex flex-col sm:flex-row gap-2"><input value={shareCode} onChange={e => setShareCode(e.target.value.toUpperCase())} maxLength={32} placeholder="Código do grupo (ex.: PADARIA-01)" className="flex-1 min-w-0 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 text-sm"/><button onClick={syncSharedData} disabled={shareBusy} className="px-5 py-3 rounded-xl bg-amber-500 text-white font-bold text-sm disabled:opacity-60">{shareBusy ? 'Sincronizando...' : 'Sincronizar agora'}</button></div>
+        {shareMessage && <p role="status" className="text-xs text-neutral-600 dark:text-neutral-300">{shareMessage}</p>}
+      </section>
       {/* Banner Principal de Arquitetura Offline-First */}
       <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 shadow-xs flex flex-wrap items-center justify-between gap-6">
         <div className="flex items-center gap-4">

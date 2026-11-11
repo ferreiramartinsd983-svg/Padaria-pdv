@@ -12,7 +12,8 @@ import {
   Edit2,
   Trash2,
   RotateCcw,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ScanLine
 } from 'lucide-react';
 import { Product, ProductCategory } from '../types/padaria';
 import { storage } from '../services/storage';
@@ -39,6 +40,47 @@ export const StockModule: React.FC<StockModuleProps> = ({
   const [adjustReason, setAdjustReason] = useState<string>('Reposição de fornada fresca');
   const [isSearchingImage, setIsSearchingImage] = useState(false);
   const [imageSearchMessage, setImageSearchMessage] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerMessage, setScannerMessage] = useState('');
+  const [scannerCode, setScannerCode] = useState('');
+
+  const lookupBarcode = async (rawCode: string) => {
+    const code = rawCode.trim(); if (!code) return;
+    setScannerCode(code);
+    const existing = products.find((item) => !item.isArchived && item.barcode.trim() === code);
+    if (existing) {
+      setEditingProduct(existing);
+      setFormData({ name: existing.name, category: existing.category, barcode: existing.barcode, salePrice: existing.salePrice, costPrice: existing.costPrice, isWeighed: existing.isWeighed, stockQuantity: existing.stockQuantity, minStock: existing.minStock, unit: existing.unit, batchNumber: existing.batchNumber || '', expirationDate: existing.expirationDate || '', imageUrl: existing.imageUrl || '' });
+      setScannerMessage('Produto já cadastrado: ' + existing.name + '. Carreguei os dados para edição.');
+      return;
+    }
+    setFormData((current) => ({ ...current, barcode: code })); setScannerMessage('Código lido. Procurando os dados do produto…');
+    try {
+      const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_name_pt,categories_tags,image_front_url`);
+      if (!response.ok) throw new Error('Busca indisponível'); const result = await response.json(); const product = result.product;
+      if (result.status !== 1 || !product) { setScannerMessage('Código salvo. Não achei o produto na base; complete o nome e os preços para cadastrar.'); return; }
+      const name = product.product_name_pt || product.product_name || ''; const tags = (product.categories_tags || []).join(' ').toLowerCase();
+      const category: ProductCategory = /beverage|drink|bebida/.test(tags) ? 'BEBIDAS' : /dairy|cheese|meat|cold|latic|queijo|carne/.test(tags) ? 'FRIOS' : 'MERCEARIA';
+      setFormData((current) => ({ ...current, barcode: code, name: name || current.name, category, imageUrl: product.image_front_url || current.imageUrl }));
+      setScannerMessage(name ? `Produto encontrado: ${name}. Confira os dados e informe seus preços e estoque.` : 'Código encontrado. Complete os dados do produto.');
+    } catch { setScannerMessage('Não consegui consultar a base agora. O código ficou preenchido; informe os dados manualmente.'); }
+  };
+
+  useEffect(() => {
+    if (!scannerOpen) return; let stream: MediaStream | undefined; let frame = 0; let stopped = false;
+    const video = document.getElementById('stock-barcode-video') as HTMLVideoElement | null;
+    const BarcodeDetectorApi = (window as Window & { BarcodeDetector?: new (options?: { formats?: string[] }) => { detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>> } }).BarcodeDetector;
+    if (!navigator.mediaDevices?.getUserMedia) { setScannerMessage('A câmera não está disponível. Digite o código no campo abaixo.'); return; }
+    if (!BarcodeDetectorApi) { setScannerMessage('Este navegador não oferece leitura pela câmera. Use leitor USB/Bluetooth ou digite o código.'); return; }
+    const detector = new BarcodeDetectorApi({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then((camera) => {
+      if (stopped) { camera.getTracks().forEach((track) => track.stop()); return; } stream = camera; if (video) { video.srcObject = camera; void video.play(); }
+      const scan = async () => { if (stopped || !video || video.readyState < 2) { frame = requestAnimationFrame(scan); return; }
+        try { const codes = await detector.detect(video); if (codes[0]?.rawValue) { setScannerOpen(false); void lookupBarcode(codes[0].rawValue); return; } } catch { /* aguarda o próximo quadro */ }
+        frame = requestAnimationFrame(scan); }; frame = requestAnimationFrame(scan);
+    }).catch(() => setScannerMessage('Não foi possível abrir a câmera. Confira a permissão ou digite o código.'));
+    return () => { stopped = true; cancelAnimationFrame(frame); stream?.getTracks().forEach((track) => track.stop()); };
+  }, [scannerOpen]);
 
   // Form para novo produto
   const [formData, setFormData] = useState({
@@ -128,6 +170,9 @@ export const StockModule: React.FC<StockModuleProps> = ({
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
+    const barcode = formData.barcode.trim();
+    const duplicate = barcode && products.find((product) => !product.isArchived && product.barcode.trim() === barcode && product.id !== editingProduct?.id);
+    if (duplicate) { setScannerCode(barcode); setScannerMessage('Este código já pertence a ' + duplicate.name + '. Leia outro código ou edite o produto existente.'); return; }
 
     if (editingProduct) {
       const updated = products.map((product) => product.id === editingProduct.id
@@ -146,7 +191,7 @@ export const StockModule: React.FC<StockModuleProps> = ({
       id: 'prod_' + Date.now(),
       ...formData,
       name: formData.name.trim(),
-      barcode: formData.barcode || String(Math.floor(78910000000 + Math.random() * 9999999)),
+      barcode,
       salePrice: Number(formData.salePrice),
       costPrice: Number(formData.costPrice),
       stockQuantity: Number(formData.stockQuantity),
@@ -407,6 +452,12 @@ export const StockModule: React.FC<StockModuleProps> = ({
                 <p className="text-neutral-500">Ao digitar o nome no cadastro, o app procura a imagem automaticamente no Openverse.</p>
               </div>
 
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2 dark:border-amber-900 dark:bg-amber-950/20">
+                <div className="flex items-center justify-between gap-2"><div><b className="text-sm">Leitor de código de barras</b><p className="text-[11px] text-neutral-600 dark:text-neutral-300">Leia pela câmera ou use leitor USB/Bluetooth. Tentamos preencher o produto pela base Open Food Facts.</p></div><button type="button" onClick={() => { setScannerMessage(''); setScannerOpen(true); }} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-3 py-2 font-bold text-white"><ScanLine className="h-4 w-4"/>Ler</button></div>
+                <div className="flex gap-2"><input value={scannerCode} onChange={(e) => setScannerCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void lookupBarcode(scannerCode); } }} placeholder="Digite ou escaneie o EAN" className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800"/><button type="button" onClick={() => void lookupBarcode(scannerCode)} className="rounded-lg border px-3 font-semibold dark:border-neutral-700">Buscar</button></div>
+                {scannerMessage && <p role="status" className="text-[11px] text-neutral-600 dark:text-neutral-300">{scannerMessage}</p>}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold text-neutral-700 dark:text-neutral-300 block mb-1">
@@ -537,6 +588,8 @@ export const StockModule: React.FC<StockModuleProps> = ({
           </div>
         </div>
       )}
+
+      {scannerOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4"><section className="w-full max-w-md rounded-2xl bg-white p-5 dark:bg-neutral-900"><div className="flex items-center justify-between"><h3 className="font-bold">Ler código de barras</h3><button type="button" onClick={() => setScannerOpen(false)} aria-label="Fechar leitor"><X className="h-5 w-5"/></button></div><video id="stock-barcode-video" playsInline muted className="mt-3 aspect-video w-full rounded-xl bg-black object-cover"/><p className="mt-2 text-xs text-neutral-500">Aponte a câmera traseira para o código. A leitura preenche o código e tenta localizar o nome e a imagem.</p>{scannerMessage && <p role="status" className="mt-2 text-xs text-amber-700">{scannerMessage}</p>}<button type="button" onClick={() => setScannerOpen(false)} className="mt-4 w-full rounded-lg border py-2 font-semibold dark:border-neutral-700">Fechar</button></section></div>}
 
       {productToArchive && (
         <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4">

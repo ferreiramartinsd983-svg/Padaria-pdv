@@ -23,6 +23,7 @@ import androidx.webkit.WebViewAssetLoader
 
 class MainActivity : ComponentActivity() {
     private var webView: WebView? = null
+    private lateinit var localDataServer: LocalDataServer
     private var pendingUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingMicrophoneRequest: PermissionRequest? = null
     private var pendingDownloadName: String = "PadariaMaster-backup.json"
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        localDataServer = LocalDataServer(applicationContext)
 
         val assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -67,6 +69,7 @@ class MainActivity : ComponentActivity() {
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
             settings.allowContentAccess = true
+            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(
                     view: WebView,
@@ -115,6 +118,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             addJavascriptInterface(DownloadBridge(), "PadariaDownloads")
+            addJavascriptInterface(ServerBridge(), "PadariaServerBridge")
         }
 
         webView = appWebView
@@ -137,6 +141,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         webView?.apply {
             removeJavascriptInterface("PadariaDownloads")
+            removeJavascriptInterface("PadariaServerBridge")
             stopLoading()
             destroy()
         }
@@ -144,6 +149,11 @@ class MainActivity : ComponentActivity() {
         pendingMicrophoneRequest = null
         webView = null
         super.onDestroy()
+    }
+
+    private inner class ServerBridge {
+        @JavascriptInterface
+        fun startDataServer(): String = runCatching { localDataServer.start() }.getOrElse { "ERROR:${it.message ?: "não foi possível iniciar"}" }
     }
 
     private inner class DownloadBridge {
