@@ -8,9 +8,18 @@ const port = Number(process.env.PORT || 8080);
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(dirname, 'dist');
 const sharedDir = path.join(dirname, 'shared-data');
+const onlineClients = new Map();
+const presenceTtlMs = 45_000;
+const groupWriteQueues = new Map();
+function serializeGroupWrite(code, operation) {
+  const previous = groupWriteQueues.get(code) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  groupWriteQueues.set(code, current);
+  return current.finally(() => { if (groupWriteQueues.get(code) === current) groupWriteQueues.delete(code); });
+}
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
@@ -33,6 +42,33 @@ function mergeBackups(existing, incoming) {
   return merged;
 }
 
+function getOnlineClients(code) {
+  const clients = onlineClients.get(code) || new Map();
+  const cutoff = Date.now() - presenceTtlMs;
+  for (const [id, client] of clients) if (client.lastSeen < cutoff) clients.delete(id);
+  onlineClients.set(code, clients);
+  return [...clients.entries()].map(([id, client]) => ({ id, name: client.name, lastSeen: client.lastSeen }));
+}
+
+app.post('/api/share/:code/presence', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  if (!/^[A-Z0-9-]{4,32}$/.test(code)) return res.status(400).json({ error: 'Código inválido.' });
+  const deviceId = String(req.body?.deviceId || '').slice(0, 100);
+  if (!deviceId) return res.status(400).json({ error: 'Identificação do aparelho ausente.' });
+  const clients = onlineClients.get(code) || new Map();
+  clients.set(deviceId, { name: String(req.body?.name || 'Aparelho').slice(0, 80), lastSeen: Date.now() });
+  onlineClients.set(code, clients);
+  const devices = getOnlineClients(code);
+  res.json({ count: devices.length, devices, serverTime: Date.now() });
+});
+
+app.get('/api/share/:code/presence', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  if (!/^[A-Z0-9-]{4,32}$/.test(code)) return res.status(400).json({ error: 'Código inválido.' });
+  const devices = getOnlineClients(code);
+  res.json({ count: devices.length, devices, serverTime: Date.now() });
+});
+
 app.get('/api/share/:code', async (req, res) => {
   const code = String(req.params.code || '').toUpperCase();
   if (!/^[A-Z0-9-]{4,32}$/.test(code)) return res.status(400).json({ error: 'Código inválido.' });
@@ -50,11 +86,15 @@ app.put('/api/share/:code', async (req, res) => {
   if (!req.body || !Array.isArray(req.body.products)) return res.status(400).json({ error: 'Backup inválido.' });
   try {
     await fs.mkdir(sharedDir, { recursive: true });
-    const file = path.join(sharedDir, `${code}.json`);
-    let existing = {};
-    try { existing = JSON.parse(await fs.readFile(file, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const merged = mergeBackups(existing, req.body);
-    await fs.writeFile(file, JSON.stringify(merged), 'utf8');
+    const merged = await serializeGroupWrite(code, async () => {
+      await fs.mkdir(sharedDir, { recursive: true });
+      const file = path.join(sharedDir, `${code}.json`);
+      let existing = {};
+      try { existing = JSON.parse(await fs.readFile(file, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      const combined = mergeBackups(existing, req.body);
+      await fs.writeFile(file, JSON.stringify(combined), 'utf8');
+      return combined;
+    });
     res.json(merged);
   } catch {
     res.status(500).json({ error: 'Não foi possível salvar os dados compartilhados.' });

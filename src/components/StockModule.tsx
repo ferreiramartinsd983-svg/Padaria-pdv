@@ -13,7 +13,8 @@ import {
   Trash2,
   RotateCcw,
   Image as ImageIcon,
-  ScanLine
+  ScanLine,
+  Camera
 } from 'lucide-react';
 import { Product, ProductCategory } from '../types/padaria';
 import { storage } from '../services/storage';
@@ -313,7 +314,8 @@ export const StockModule: React.FC<StockModuleProps> = ({
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {!showArchived && <button onClick={() => { setEditingProduct(null); resetProductForm(); setIsAddModalOpen(true); setScannerCode(''); setScannerMessage('Aponte a câmera traseira para o código de barras.'); setScannerOpen(true); }} className="flex items-center gap-1.5 px-4 py-2.5 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300 rounded-lg text-xs font-bold"><Camera className="w-4 h-4"/><span>Cadastro rápido por câmera</span></button>}
           {archivedCount > 0 && (
             <button onClick={() => setShowArchived(!showArchived)} className="px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-semibold">
               {showArchived ? 'Voltar ao estoque' : `Removidos (${archivedCount})`}

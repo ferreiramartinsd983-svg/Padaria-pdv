@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var localDataServer: LocalDataServer
     private var pendingUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingMicrophoneRequest: PermissionRequest? = null
+    private var pendingCameraRequest: PermissionRequest? = null
     private var pendingDownloadName: String = "PadariaMaster-backup.json"
     private var pendingDownloadMime: String = "application/octet-stream"
     private var pendingDownloadBytes: ByteArray? = null
@@ -39,6 +40,12 @@ class MainActivity : ComponentActivity() {
         val request = pendingMicrophoneRequest
         pendingMicrophoneRequest = null
         if (granted && request != null) request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) else request?.deny()
+    }
+
+    private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val request = pendingCameraRequest
+        pendingCameraRequest = null
+        if (granted && request != null) request.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) else request?.deny()
     }
 
     private val saveDownload = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -88,22 +95,31 @@ class MainActivity : ComponentActivity() {
                 override fun onPermissionRequest(request: PermissionRequest) {
                     val asksOnlyForAudio = request.resources.isNotEmpty() && request.resources.all { it == PermissionRequest.RESOURCE_AUDIO_CAPTURE }
                     val trustedOrigin = request.origin.scheme == "https" && request.origin.host == APP_ASSETS_HOST
-                    if (!trustedOrigin || !asksOnlyForAudio) {
+                    val asksOnlyForCamera = request.resources.isNotEmpty() && request.resources.all { it == PermissionRequest.RESOURCE_VIDEO_CAPTURE }
+                    if (!trustedOrigin || (!asksOnlyForAudio && !asksOnlyForCamera)) {
                         request.deny()
                         return
                     }
-                    pendingMicrophoneRequest?.deny()
-                    pendingMicrophoneRequest = request
-                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                        pendingMicrophoneRequest = null
-                        request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                    if (asksOnlyForCamera) {
+                        pendingCameraRequest?.deny()
+                        pendingCameraRequest = request
+                        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                            pendingCameraRequest = null
+                            request.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+                        } else requestCamera.launch(Manifest.permission.CAMERA)
                     } else {
-                        requestMicrophone.launch(Manifest.permission.RECORD_AUDIO)
+                        pendingMicrophoneRequest?.deny()
+                        pendingMicrophoneRequest = request
+                        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            pendingMicrophoneRequest = null
+                            request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                        } else requestMicrophone.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 }
 
                 override fun onPermissionRequestCanceled(request: PermissionRequest) {
                     if (pendingMicrophoneRequest == request) pendingMicrophoneRequest = null
+                    if (pendingCameraRequest == request) pendingCameraRequest = null
                 }
 
                 override fun onShowFileChooser(
@@ -147,6 +163,8 @@ class MainActivity : ComponentActivity() {
         }
         pendingMicrophoneRequest?.deny()
         pendingMicrophoneRequest = null
+        pendingCameraRequest?.deny()
+        pendingCameraRequest = null
         webView = null
         super.onDestroy()
     }

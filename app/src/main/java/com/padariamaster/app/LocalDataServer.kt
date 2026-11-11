@@ -11,12 +11,14 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
+import java.util.concurrent.ConcurrentHashMap
 
 class LocalDataServer(context: Context) {
     private val dataDir = File(context.filesDir, "shared-groups").apply { mkdirs() }
     @Volatile private var running = false
     private var socket: ServerSocket? = null
     private val workers = Executors.newCachedThreadPool()
+    private val clients = ConcurrentHashMap<String, ConcurrentHashMap<String, Pair<String, Long>>>()
 
     @Synchronized fun start(): String {
         if (!running) {
@@ -65,8 +67,24 @@ class LocalDataServer(context: Context) {
             var read = 0
             while (read < length) { val count = input.read(bodyBytes, read, length - read); if (count < 0) break; read += count }
             if (method == "OPTIONS") { respond(connection, 204, ""); return }
-            val code = route.substringAfterLast('/').uppercase()
+            val shareRoute = route.removePrefix("/api/share/")
+            val code = shareRoute.substringBefore('/').uppercase()
             if (!route.startsWith("/api/share/") || !code.matches(Regex("[A-Z0-9-]{4,32}"))) { respond(connection, 404, "{\"error\":\"Rota ou código inválido.\"}"); return }
+            if (shareRoute.endsWith("/presence")) {
+                val group = clients.computeIfAbsent(code) { ConcurrentHashMap() }
+                val cutoff = System.currentTimeMillis() - 45_000
+                group.entries.removeIf { it.value.second < cutoff }
+                if (method == "POST") {
+                    val heartbeat = runCatching { JSONObject(String(bodyBytes, StandardCharsets.UTF_8)) }.getOrNull()
+                    val deviceId = heartbeat?.optString("deviceId").orEmpty().take(100)
+                    if (deviceId.isBlank()) { respond(connection, 400, "{\"error\":\"Identificação do aparelho ausente.\"}"); return }
+                    group[deviceId] = (heartbeat?.optString("name").orEmpty().ifBlank { "Aparelho" }.take(80)) to System.currentTimeMillis()
+                } else if (method != "GET") { respond(connection, 405, "{\"error\":\"Método não permitido.\"}"); return }
+                val devices = JSONArray()
+                group.forEach { (id, client) -> devices.put(JSONObject().put("id", id).put("name", client.first).put("lastSeen", client.second)) }
+                respond(connection, 200, JSONObject().put("count", group.size).put("devices", devices).put("serverTime", System.currentTimeMillis()).toString())
+                return
+            }
             val file = File(dataDir, "$code.json")
             if (method == "GET") {
                 if (!file.exists()) respond(connection, 404, "{\"error\":\"Grupo ainda sem dados.\"}")
@@ -74,9 +92,10 @@ class LocalDataServer(context: Context) {
             } else if (method == "PUT") {
                 val incoming = runCatching { JSONObject(String(bodyBytes, StandardCharsets.UTF_8)) }.getOrNull()
                 if (incoming == null || !incoming.has("products")) { respond(connection, 400, "{\"error\":\"Backup inválido.\"}"); return }
-                val existing = if (file.exists()) runCatching { JSONObject(file.readText()) }.getOrDefault(JSONObject()) else JSONObject()
-                val merged = merge(existing, incoming)
-                file.writeText(merged.toString())
+                val merged = synchronized(file.absolutePath.intern()) {
+                    val existing = if (file.exists()) runCatching { JSONObject(file.readText()) }.getOrDefault(JSONObject()) else JSONObject()
+                    merge(existing, incoming).also { file.writeText(it.toString()) }
+                }
                 respond(connection, 200, merged.toString())
             } else respond(connection, 405, "{\"error\":\"Método não permitido.\"}")
         }
@@ -109,7 +128,7 @@ class LocalDataServer(context: Context) {
     private fun respond(socket: Socket, status: Int, body: String) {
         val phrase = when (status) { 200 -> "OK"; 204 -> "No Content"; 400 -> "Bad Request"; 404 -> "Not Found"; 405 -> "Method Not Allowed"; 413 -> "Payload Too Large"; else -> "Error" }
         val bytes = body.toByteArray(StandardCharsets.UTF_8)
-        val headers = "HTTP/1.1 $status $phrase\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, PUT, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n"
+        val headers = "HTTP/1.1 $status $phrase\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, PUT, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n"
         socket.getOutputStream().apply { write(headers.toByteArray(StandardCharsets.US_ASCII)); write(bytes); flush() }
     }
 }

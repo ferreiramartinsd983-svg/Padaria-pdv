@@ -1,5 +1,5 @@
 import { downloadBlob } from '../services/download';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Cloud, 
   CloudOff, 
@@ -35,6 +35,19 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
   const [shareServer, setShareServer] = useState(() => localStorage.getItem('padaria_share_server') || (window.location.hostname === 'appassets.androidplatform.net' ? '' : window.location.origin));
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
+  const [onlineDevices, setOnlineDevices] = useState<Array<{ id: string; name: string; lastSeen: number }>>([]);
+  const [presenceAvailable, setPresenceAvailable] = useState(false);
+  const syncInFlight = useRef(false);
+  const [deviceId] = useState(() => {
+    const key = 'padaria_share_device_id';
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = window.crypto?.randomUUID?.() || 'device-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem(key, id);
+    }
+    return id;
+  });
+  const deviceName = /Android/i.test(navigator.userAgent) ? 'Celular Android' : /iPhone|iPad/i.test(navigator.userAgent) ? 'iPhone/iPad' : 'Computador';
 
   const startPhoneServer = () => {
     const bridge = (window as Window & { PadariaServerBridge?: { startDataServer: () => string } }).PadariaServerBridge;
@@ -49,22 +62,37 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
   const syncSharedData = async () => {
     const code = shareCode.trim().toUpperCase();
     if (!/^[A-Z0-9-]{4,32}$/.test(code)) { setShareMessage('Informe um código com 4 a 32 letras ou números.'); return; }
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
     setShareBusy(true); setShareMessage('Conectando ao grupo...');
     try {
       localStorage.setItem('padaria_share_code', code);
       const server = shareServer.trim().replace(/\/$/, '');
       localStorage.setItem('padaria_share_server', server);
       const endpoint = `${server}/api/share/${encodeURIComponent(code)}`;
-      const response = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: storage.exportFullBackup() });
+      const response = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: storage.exportFullBackup(), cache: 'no-store' });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Falha ao sincronizar.');
       if (!storage.importFullBackup(JSON.stringify(data))) throw new Error('Os dados recebidos não puderam ser aplicados.');
       const updated: SyncState = { ...syncState, lastSyncTimestamp: Date.now(), pendingChangesCount: 0 };
       setSyncState(updated); storage.saveSyncState(updated); onDatabaseRestored();
-      setShareMessage('Compartilhado com sucesso. Os aparelhos deste grupo já podem acessar os dados.');
-    } catch (error) { setShareMessage(error instanceof Error ? error.message : 'Não foi possível conectar. Confira sua internet e o servidor do app.'); }
-    finally { setShareBusy(false); }
+      setShareMessage('Dados sincronizados com sucesso.');
+      try {
+        const presenceResponse = await fetch(`${endpoint}/presence`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+          body: JSON.stringify({ deviceId, name: deviceName })
+        });
+        const presence = await presenceResponse.json();
+        if (presenceResponse.ok && Array.isArray(presence.devices)) {
+          setOnlineDevices(presence.devices);
+          setPresenceAvailable(true);
+        } else setPresenceAvailable(false);
+      } catch { setPresenceAvailable(false); }
+    } catch (error) { setPresenceAvailable(false); setShareMessage(error instanceof Error ? error.message : 'Não foi possível conectar. Confira a rede e o endereço do servidor.'); }
+    finally { syncInFlight.current = false; setShareBusy(false); }
   };
+  const syncSharedDataRef = useRef(syncSharedData);
+  syncSharedDataRef.current = syncSharedData;
 
   const handleToggleFirestore = () => {
     const updated: SyncState = {
@@ -131,8 +159,9 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
   };
 
   useEffect(() => {
-    if (!shareCode) return;
-    const timer = window.setInterval(() => { void syncSharedData(); }, 20000);
+    if (!shareCode) { setOnlineDevices([]); setPresenceAvailable(false); return; }
+    void syncSharedDataRef.current();
+    const timer = window.setInterval(() => { void syncSharedDataRef.current(); }, 15000);
     return () => window.clearInterval(timer);
   }, [shareCode]);
 
@@ -146,12 +175,20 @@ export const SyncModule: React.FC<SyncModuleProps> = ({ onDatabaseRestored }) =>
   return (
     <div className="space-y-6">
       <section className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 space-y-3">
-        <div><h3 className="font-bold flex items-center gap-2"><Wifi className="w-5 h-5 text-amber-500"/>Compartilhar entre celulares</h3><p className="text-xs text-neutral-500 mt-1">Use o mesmo servidor e código nos aparelhos. Escolha um celular como servidor e conecte todos à mesma rede Wi-Fi. Os demais sincronizam a cada 20 segundos enquanto esta tela estiver aberta.</p></div>
+        <div><h3 className="font-bold flex items-center gap-2"><Wifi className="w-5 h-5 text-amber-500"/>Compartilhar entre celulares</h3><p className="text-xs text-neutral-500 mt-1">Use o mesmo servidor e código nos aparelhos. Escolha um celular como servidor e conecte todos à mesma rede Wi-Fi. Os demais sincronizam a cada 15 segundos enquanto esta tela estiver aberta.</p></div>
         {(window as Window & { PadariaServerBridge?: unknown }).PadariaServerBridge && <button onClick={startPhoneServer} className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-bold">Usar este celular como servidor</button>}
         <input type="url" value={shareServer} onChange={e => setShareServer(e.target.value)} placeholder="Servidor do app (ex.: https://padaria.exemplo.com)" className="w-full p-3 rounded-xl border border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 text-sm"/>
         <p className="text-[11px] text-neutral-500">No APK Android, inicie o servidor em um celular e informe nos outros o endereço mostrado. Todos precisam estar na mesma rede Wi-Fi.</p>
         <div className="flex flex-col sm:flex-row gap-2"><input value={shareCode} onChange={e => setShareCode(e.target.value.toUpperCase())} maxLength={32} placeholder="Código do grupo (ex.: PADARIA-01)" className="flex-1 min-w-0 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 text-sm"/><button onClick={syncSharedData} disabled={shareBusy} className="px-5 py-3 rounded-xl bg-amber-500 text-white font-bold text-sm disabled:opacity-60">{shareBusy ? 'Sincronizando...' : 'Sincronizar agora'}</button></div>
         {shareMessage && <p role="status" className="text-xs text-neutral-600 dark:text-neutral-300">{shareMessage}</p>}
+        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800/70" aria-live="polite">
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${presenceAvailable ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300'}`}>
+            <span className={`h-2 w-2 rounded-full ${presenceAvailable ? 'bg-emerald-500' : 'bg-neutral-400'}`}/>
+            {presenceAvailable ? `${onlineDevices.length} ${onlineDevices.length === 1 ? 'aparelho' : 'aparelhos'} online` : 'Aparelhos online: aguardando conexão'}
+          </span>
+          {presenceAvailable && onlineDevices.map((device) => <span key={device.id} className="text-[11px] text-neutral-500">{device.name}</span>)}
+          <span className="ml-auto text-[10px] text-neutral-400">Online = contato nos últimos 45 segundos</span>
+        </div>
       </section>
       {/* Banner Principal de Arquitetura Offline-First */}
       <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 shadow-xs flex flex-wrap items-center justify-between gap-6">
