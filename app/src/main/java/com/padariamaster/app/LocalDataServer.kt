@@ -41,8 +41,14 @@ class LocalDataServer(context: Context) {
     }
 
     private fun localIp(): String = runCatching {
-        NetworkInterface.getNetworkInterfaces().toList().sortedBy { if (it.name.startsWith("wlan") || it.name.startsWith("ap")) 0 else 1 }.flatMap { it.inetAddresses.toList() }
-            .first { it is Inet4Address && !it.isLoopbackAddress && !it.isLinkLocalAddress }.hostAddress
+        NetworkInterface.getNetworkInterfaces().toList()
+            .sortedBy { if (it.name.startsWith("wlan") || it.name.startsWith("ap")) 0 else 1 }
+            .flatMap { it.inetAddresses.toList() }
+            .first { address ->
+                if (address !is Inet4Address || address.isLoopbackAddress || address.isLinkLocalAddress) return@first false
+                val host = address.hostAddress.orEmpty()
+                host.startsWith("192.168.") || host.startsWith("10.") || Regex("^172.(1[6-9]|2[0-9]|3[01]).").containsMatchIn(host)
+            }.hostAddress
     }.getOrDefault("127.0.0.1")
 
     private fun handle(client: Socket) {

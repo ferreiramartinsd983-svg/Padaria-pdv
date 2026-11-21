@@ -44,6 +44,32 @@ export const StockModule: React.FC<StockModuleProps> = ({
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerMessage, setScannerMessage] = useState('');
   const [scannerCode, setScannerCode] = useState('');
+  const galleryInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleGalleryImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setImageSearchMessage('Escolha um arquivo de imagem da galeria.'); return; }
+    const reader = new FileReader();
+    reader.onerror = () => setImageSearchMessage('Não foi possível abrir essa imagem.');
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => setImageSearchMessage('Não foi possível abrir essa imagem.');
+      image.onload = () => {
+        const scale = Math.min(1, 1200 / Math.max(image.width, image.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const imageUrl = canvas.toDataURL('image/jpeg', 0.82);
+        setFormData((current) => ({ ...current, imageUrl }));
+        setImageSearchMessage('Foto da galeria adicionada e otimizada para sincronização.');
+      };
+      image.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const lookupBarcode = async (rawCode: string) => {
     const code = rawCode.trim(); if (!code) return;
@@ -443,7 +469,9 @@ export const StockModule: React.FC<StockModuleProps> = ({
 
               <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-3 space-y-2">
                 <label className="font-semibold text-neutral-700 dark:text-neutral-300 block">Imagem de capa (opcional)</label>
-                <div className="flex gap-2">
+                <input ref={galleryInputRef} type="file" accept="image/*" onChange={handleGalleryImage} className="hidden" />
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => galleryInputRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 font-semibold text-white"><ImageIcon className="h-4 w-4" />Escolher da galeria</button>
                   <button type="button" disabled={isSearchingImage} onClick={handleSearchProductImage} className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-3 py-2 font-semibold disabled:opacity-60">
                     <ImageIcon className="h-4 w-4" />{isSearchingImage ? 'Buscando…' : 'Buscar outra imagem'}
                   </button>
